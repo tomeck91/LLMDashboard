@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GPUDashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg: #0b0f14;
+    --panel: #121821;
+    --border: #1f2937;
+    --text: #e5e7eb;
+    --muted: #8b95a5;
+    --gpu0: #22d3ee;
+    --gpu1: #a78bfa;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: "Segoe UI", system-ui, sans-serif; min-height: 100vh; }
+
+  header {
+    display: flex; align-items: center; gap: 12px;
+    padding: 16px 24px; border-bottom: 1px solid var(--border);
+  }
+  header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
+  #live-dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: 0.3; } }
+  header .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
+
+  main { padding: 24px; max-width: 1280px; margin: 0 auto; }
+
+  #cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+  .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 14px; color: var(--muted); }
+  .gpu-dot { width: 10px; height: 10px; border-radius: 3px; }
+
+  .util-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .util-big { font-size: 42px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
+  .util-big span { font-size: 20px; color: var(--muted); font-weight: 400; }
+  .util-label { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); }
+
+  .vram-bar { height: 8px; background: #1c2733; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
+  .vram-bar i { display: block; height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+  .vram-text { font-size: 13px; color: var(--muted); margin-bottom: 16px; font-variant-numeric: tabular-nums; }
+
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stat label { display: block; font-size: 10px; letter-spacing: 1px; color: var(--muted); margin-bottom: 3px; }
+  .stat b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+  #charts { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+  .chart-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; }
+  .chart-panel h3 { font-size: 13px; font-weight: 500; color: var(--muted); margin-bottom: 10px; letter-spacing: 0.5px; }
+  .chart-box { position: relative; height: 200px; }
+
+  #status { padding: 40px; text-align: center; color: var(--muted); display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div id="live-dot"></div>
+  <h1>GPUDashboard</h1>
+  <div class="meta" id="driver-meta">connecting&hellip;</div>
+</header>
+
+<main>
+  <div id="status">Waiting for first sample&hellip; (the backend needs ~1 s after start)</div>
+  <section id="cards"></section>
+  <section id="charts"></section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>
