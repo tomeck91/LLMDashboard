@@ -14,6 +14,10 @@ python -m venv .venv
 
 Then open **http://localhost:8000** (the .bat files also do this automatically).
 
+The server binds to `0.0.0.0`, so it's also reachable from other devices on your LAN:
+**http://\<pc-name\>:8000** or **http://\<pc-ip\>:8000** (find the IP with `ipconfig`).
+Note: this is read-only stats with no authentication — anyone on your network can view it.
+
 ### Quick way: batch files
 
 | File | Action |
@@ -26,8 +30,8 @@ Server output goes to `server.log` / `server.err.log` in this folder (per-reques
 
 ## What it shows
 
-- Header: host CPU % and RAM (used/total, %), plus the model currently loaded in LM Studio (polled from `http://127.0.0.1:1234/api/v1/models` every 5 s; shows "LM Studio offline" if the server isn't running)
-- Per-GPU cards (1 s refresh): utilization %, VRAM bar, temperature, power draw, graphics clock, fan speed
+- Header: host CPU % and RAM (used/total, %), plus the model currently loaded in LM Studio with quantization, size and max context (polled from `http://127.0.0.1:1234/api/v1/models` every 5 s; shows "LM Studio offline" if the server isn't running)
+- Per-GPU cards (1 s refresh): utilization %, VRAM bar, active GPU processes (name + SM %), temperature, power draw (with TDP limit), graphics clock, fan speed
 - Live charts (5 min rolling window, 1 s samples): GPU util %, VRAM used, temperature, power — one line per GPU
 
 ## Files

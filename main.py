@@ -35,6 +35,12 @@ class Sampler:
         self.handles = [pynvml.nvmlDeviceGetHandleByIndex(i) for i in range(self.count)]
         self.names = [_to_str(pynvml.nvmlDeviceGetName(h)) for h in self.handles]
         self.uuids = [_to_str(pynvml.nvmlDeviceGetUUID(h)) for h in self.handles]
+        self.power_limits = []  # W, or None if the card doesn't report a limit
+        for h in self.handles:
+            try:
+                self.power_limits.append(pynvml.nvmlDeviceGetPowerManagementLimit(h) / 1000.0)
+            except pynvml.NVMLError:
+                self.power_limits.append(None)
 
         self._lock = threading.Lock()
         self.history: deque[dict] = deque(maxlen=HISTORY_SECONDS)
@@ -45,6 +51,24 @@ class Sampler:
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
+
+    def _gpu_processes(self, h):
+        """Processes actively using this GPU right now (SM or memory activity).
+        nvmlDeviceGetComputeRunningProcesses on Windows lists every app with a GPU
+        context (explorer, dwm, Discord, ...) — noise, so we use the utilization API."""
+        try:
+            samples = pynvml.nvmlDeviceGetProcessUtilization(h, 0)
+        except pynvml.NVMLError:
+            return []
+        out = []
+        for s in samples:
+            if s.smUtil > 0 or s.memUtil > 0:
+                try:
+                    name = psutil.Process(s.pid).name()
+                except psutil.Error:
+                    name = "unknown"
+                out.append({"pid": s.pid, "name": name, "sm_pct": s.smUtil})
+        return out
 
     def _read_gpu(self, i):
         h = self.handles[i]
@@ -67,6 +91,8 @@ class Sampler:
             "clock_graphics_mhz": pynvml.nvmlDeviceGetClockInfo(h, pynvml.NVML_CLOCK_GRAPHICS),
             "clock_memory_mhz": pynvml.nvmlDeviceGetClockInfo(h, pynvml.NVML_CLOCK_MEM),
             "fan_pct": fan,
+            "power_limit_w": self.power_limits[i],
+            "procs": self._gpu_processes(h),
         }
 
     def _host_stats(self):
@@ -90,10 +116,13 @@ class Sampler:
             for m in data.get("models", []):
                 for inst in m.get("loaded_instances", []):
                     q = m.get("quantization") or {}
+                    size = m.get("size_bytes")
                     loaded.append({
                         "name": m.get("display_name") or m.get("key"),
                         "quant": q.get("name"),
                         "context": (inst.get("config") or {}).get("context_length"),
+                        "size_gb": round(size / 1024**3, 1) if size else None,
+                        "max_context": m.get("max_context_length"),
                     })
             self.lmstudio = {"online": True, "loaded": loaded}
         except Exception:
@@ -161,5 +190,6 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
 
+    # 0.0.0.0: reachable from the LAN (e.g. http://<pc-name>:8000 or http://<pc-ip>:8000)
     # log_level="warning": no per-request INFO spam (goes to server.err.log only on errors)
-    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="warning")

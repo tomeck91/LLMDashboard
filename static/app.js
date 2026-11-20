@@ -39,11 +39,20 @@ function renderHost(host, lm) {
   hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)} / ${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
   if (!lm) return;
   if (lm.online && lm.loaded.length) {
+    const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+    const detail = (m) => {
+      const parts = [];
+      if (m.quant) parts.push(m.quant);
+      if (m.size_gb) parts.push(m.size_gb + " GB");
+      if (m.max_context) parts.push("ctx " + fmtCtx(m.max_context));
+      return parts.length ? ` (${parts.join(" · ")})` : "";
+    };
     const m = lm.loaded[0];
     const extra = lm.loaded.length > 1 ? ` +${lm.loaded.length - 1} more` : "";
-    const label = `${m.name}${m.quant ? ` (${m.quant})` : ""}${extra}`;
-    hostModelEl.textContent = label;
-    hostModelEl.title = lm.loaded.map((x) => `${x.name}${x.quant ? ` (${x.quant})` : ""} ctx ${x.context || "?"}`).join("\n");
+    hostModelEl.textContent = m.name + detail(m) + extra;
+    hostModelEl.title = lm.loaded
+      .map((x) => `${x.name}${detail(x)}${x.context ? `, running ctx ${x.context}` : ""}`)
+      .join("\n");
   } else {
     hostModelEl.textContent = lm.online ? "none loaded" : "LM Studio offline";
     hostModelEl.title = "";
@@ -72,9 +81,10 @@ function renderCards(data) {
         </div>
         <div class="vram-bar"><i style="width:${memPct.toFixed(1)}%; background:${color}"></i></div>
         <div class="vram-text">${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB VRAM</div>
+        <div class="proc-text" title="${g.procs.map((p) => `${p.name} (PID ${p.pid})`).join(", ")}">${g.procs.length ? g.procs.map((p) => `${p.name} (${p.sm_pct}%)`).join(", ") : "no active processes"}</div>
         <div class="stats-grid">
           <div class="stat"><label>TEMP</label><b>${g.temp_c}&deg;C</b></div>
-          <div class="stat"><label>POWER</label><b>${g.power_w} W</b></div>
+          <div class="stat"><label>POWER</label><b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
           <div class="stat"><label>CLOCK</label><b>${g.clock_graphics_mhz} MHz</b></div>
           <div class="stat"><label>FAN</label><b>${g.fan_pct == null ? "N/A" : g.fan_pct + "%"}</b></div>
         </div>
