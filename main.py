@@ -119,4 +119,5 @@ app.mount("/", StaticFiles(directory="static", html=True), name="static")
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    # log_level="warning": no per-request INFO spam (goes to server.err.log only on errors)
+    uvicorn.run(app, host="127.0.0.1", port=8000, log_level="warning")

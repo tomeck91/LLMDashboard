@@ -18,9 +18,11 @@ Then open **http://localhost:8000** (the .bat files also do this automatically).
 
 | File | Action |
 |---|---|
-| `start.bat` | Starts the server, opens the browser (Ctrl+C in its window stops it) |
+| `start.bat` | Starts the server **hidden** (no console window), opens the browser. No-op if already running |
 | `stop.bat` | Kills whatever is listening on port 8000 (safe to run when already stopped) |
 | `restart.bat` | stop + start |
+
+Server output goes to `server.log` / `server.err.log` in this folder (per-request logging is off; only warnings/errors are recorded).
 
 ## What it shows
 

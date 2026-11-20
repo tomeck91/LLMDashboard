@@ -1,6 +1,5 @@
 @echo off
-rem GPUDashboard - restart server (stop + start)
+rem GPUDashboard - restart server (stop + start, hidden)
 cd /d "%~dp0"
 call stop.bat
-start "" "http://localhost:8000"
-.\.venv\Scripts\python main.py
+call start.bat
