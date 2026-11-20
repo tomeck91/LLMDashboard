@@ -1,4 +1,4 @@
-const GPU_COLORS = ["#57e389", "#57c7ff"];
+const GPU_COLORS = ["#ff2a6d", "#00f0ff"]; // hot pink / neon cyan
 const SUP = ["\u00b9", "\u00b2", "\u00b3", "\u00b4", "\u2075", "\u2076", "\u2077", "\u2078", "\u2079", "\u2070"];
 const METRICS = [
   { key: "util_gpu", label: "GPU Utilization (%)" },
@@ -31,11 +31,11 @@ function fmtTime(t) {
   return new Date(t * 1000).toLocaleTimeString([], { hour12: false });
 }
 
-// btop-style level color: green -> yellow -> red
+// level color: cyan -> acid yellow -> hot pink
 function levelColor(pct) {
-  if (pct >= 85) return "var(--red)";
-  if (pct >= 60) return "var(--yellow)";
-  return "var(--green)";
+  if (pct >= 85) return "var(--pink)";
+  if (pct >= 60) return "var(--acid)";
+  return "var(--cyan)";
 }
 
 // terminal segmented bar: N block cells, filled up to pct
@@ -96,7 +96,7 @@ function renderCards(data) {
     const procText = g.procs.length ? g.procs.map((p) => `${p.name} (${p.sm_pct}%)`).join(", ") : "none";
     return `
       <div class="card">
-        <div class="card-head"><span class="pnum">${SUP[i % SUP.length]}</span>GPU ${g.index} \u00b7 ${g.name.replace("NVIDIA GeForce ", "")}</div>
+        <div class="card-head"><span class="pnum">${SUP[i % SUP.length]}</span>GPU ${g.index}<span class="sep">//</span><span class="gpu-name">${g.name.replace("NVIDIA GeForce ", "")}</span></div>
         <div class="util-grid">
           <div class="util-line"><label>GPU</label>${seg(g.util_gpu, 24, levelColor(g.util_gpu))}<b style="color:${levelColor(g.util_gpu)}">${g.util_gpu}%</b></div>
           <div class="util-line"><label>MEM</label>${seg(g.util_mem, 24, levelColor(g.util_mem))}<b style="color:${levelColor(g.util_mem)}">${g.util_mem}%</b></div>
@@ -136,19 +136,19 @@ function ensureCharts() {
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { labels: { color: "#9a9a9a", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
+          legend: { labels: { color: "#8a92b8", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
           tooltip: { titleFont: { family: MONO, size: 10 }, bodyFont: { family: MONO, size: 10 } },
         },
         scales: {
           x: {
-            ticks: { color: "#666", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
-            grid: { color: "#1a1a1a" },
-            border: { color: "#2e2e2e" },
+            ticks: { color: "#6b7394", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
+            grid: { color: "rgba(181, 55, 242, 0.14)" },
+            border: { color: "rgba(0, 240, 255, 0.25)" },
           },
           y: {
-            ticks: { color: "#666", font: { family: MONO, size: 10 } },
-            grid: { color: "#1a1a1a" },
-            border: { color: "#2e2e2e" },
+            ticks: { color: "#6b7394", font: { family: MONO, size: 10 } },
+            grid: { color: "rgba(181, 55, 242, 0.14)" },
+            border: { color: "rgba(0, 240, 255, 0.25)" },
           },
         },
       },
@@ -168,7 +168,7 @@ function updateCharts(hist) {
       borderColor: GPU_COLORS[i % GPU_COLORS.length],
       fill: false,
       pointRadius: 0,
-      borderWidth: 1,
+      borderWidth: 1.5,
       tension: 0,
     }));
     chart.update("none");
