@@ -5,8 +5,10 @@ rolling in-memory history (5 minutes). The frontend polls two endpoints:
   GET /api/gpus      -> latest snapshot of all GPUs
   GET /api/history   -> time series for the charts
 """
+import json
 import threading
 import time
+import urllib.request
 from collections import deque
 
 import psutil
@@ -16,6 +18,8 @@ from fastapi.staticfiles import StaticFiles
 
 SAMPLE_INTERVAL = 1.0     # seconds between samples
 HISTORY_SECONDS = 300     # keep last 5 minutes
+LMSTUDIO_URL = "http://127.0.0.1:1234/api/v1/models"
+LMSTUDIO_POLL_INTERVAL = 5.0  # model load/unload changes rarely; 5 s is plenty
 
 
 def _to_str(v):
@@ -35,6 +39,8 @@ class Sampler:
         self._lock = threading.Lock()
         self.history: deque[dict] = deque(maxlen=HISTORY_SECONDS)
         self.latest: dict | None = None
+        self.lmstudio = {"online": False, "loaded": []}
+        self._last_lm = 0.0
         psutil.cpu_percent(interval=None)  # prime: first real value comes on next call
 
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -72,13 +78,37 @@ class Sampler:
             "ram_pct": mem.percent,
         }
 
+    def _lmstudio_stats(self, now):
+        """Poll the local LM Studio server; only every LMSTUDIO_POLL_INTERVAL seconds."""
+        if now - self._last_lm < LMSTUDIO_POLL_INTERVAL:
+            return self.lmstudio
+        self._last_lm = now
+        try:
+            with urllib.request.urlopen(LMSTUDIO_URL, timeout=2) as r:
+                data = json.loads(r.read().decode("utf-8"))
+            loaded = []
+            for m in data.get("models", []):
+                for inst in m.get("loaded_instances", []):
+                    q = m.get("quantization") or {}
+                    loaded.append({
+                        "name": m.get("display_name") or m.get("key"),
+                        "quant": q.get("name"),
+                        "context": (inst.get("config") or {}).get("context_length"),
+                    })
+            self.lmstudio = {"online": True, "loaded": loaded}
+        except Exception:
+            self.lmstudio = {"online": False, "loaded": []}
+        return self.lmstudio
+
     def _run(self):
         while True:
             try:
+                now = time.time()
                 sample = {
-                    "t": round(time.time(), 1),
+                    "t": round(now, 1),
                     "gpus": [self._read_gpu(i) for i in range(self.count)],
                     "host": self._host_stats(),
+                    "lmstudio": self._lmstudio_stats(now),
                 }
             except pynvml.NVMLError as e:
                 print(f"NVML error during sampling: {e}")

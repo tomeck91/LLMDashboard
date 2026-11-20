@@ -26,7 +26,7 @@ Server output goes to `server.log` / `server.err.log` in this folder (per-reques
 
 ## What it shows
 
-- Header: host CPU % and RAM (used/total, %)
+- Header: host CPU % and RAM (used/total, %), plus the model currently loaded in LM Studio (polled from `http://127.0.0.1:1234/api/v1/models` every 5 s; shows "LM Studio offline" if the server isn't running)
 - Per-GPU cards (1 s refresh): utilization %, VRAM bar, temperature, power draw, graphics clock, fan speed
 - Live charts (5 min rolling window, 1 s samples): GPU util %, VRAM used, temperature, power — one line per GPU
 

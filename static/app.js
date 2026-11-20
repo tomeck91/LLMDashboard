@@ -13,6 +13,7 @@ const metaEl = document.getElementById("driver-meta");
 const dotEl = document.getElementById("live-dot");
 const hostCpuEl = document.getElementById("host-cpu");
 const hostRamEl = document.getElementById("host-ram");
+const hostModelEl = document.getElementById("host-model");
 
 let charts = {}; // metric key -> Chart instance
 
@@ -32,10 +33,21 @@ function hexToRgba(hex, a) {
 }
 
 // ---------- host (header) ----------
-function renderHost(host) {
+function renderHost(host, lm) {
   if (!host) return;
   hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
   hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)} / ${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
+  if (!lm) return;
+  if (lm.online && lm.loaded.length) {
+    const m = lm.loaded[0];
+    const extra = lm.loaded.length > 1 ? ` +${lm.loaded.length - 1} more` : "";
+    const label = `${m.name}${m.quant ? ` (${m.quant})` : ""}${extra}`;
+    hostModelEl.textContent = label;
+    hostModelEl.title = lm.loaded.map((x) => `${x.name}${x.quant ? ` (${x.quant})` : ""} ctx ${x.context || "?"}`).join("\n");
+  } else {
+    hostModelEl.textContent = lm.online ? "none loaded" : "LM Studio offline";
+    hostModelEl.title = "";
+  }
 }
 
 // ---------- cards ----------
@@ -43,7 +55,7 @@ function renderCards(data) {
   statusEl.style.display = "none";
   metaEl.textContent = `driver ${data.driver_version}`;
   dotEl.style.background = "#22c55e";
-  renderHost(data.host);
+  renderHost(data.host, data.lmstudio);
 
   cardsEl.innerHTML = data.gpus.map((g, i) => {
     const color = GPU_COLORS[i % GPU_COLORS.length];
