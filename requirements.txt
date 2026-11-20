@@ -1,3 +1,4 @@
 fastapi>=0.115
 uvicorn>=0.30
 nvidia-ml-py>=12.560
+psutil>=5.9

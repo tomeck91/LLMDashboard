@@ -9,6 +9,7 @@ import threading
 import time
 from collections import deque
 
+import psutil
 import pynvml
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
@@ -34,6 +35,7 @@ class Sampler:
         self._lock = threading.Lock()
         self.history: deque[dict] = deque(maxlen=HISTORY_SECONDS)
         self.latest: dict | None = None
+        psutil.cpu_percent(interval=None)  # prime: first real value comes on next call
 
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
@@ -61,12 +63,22 @@ class Sampler:
             "fan_pct": fan,
         }
 
+    def _host_stats(self):
+        mem = psutil.virtual_memory()
+        return {
+            "cpu_pct": psutil.cpu_percent(interval=None),
+            "ram_used_gb": round(mem.used / 1024**3, 1),
+            "ram_total_gb": round(mem.total / 1024**3, 1),
+            "ram_pct": mem.percent,
+        }
+
     def _run(self):
         while True:
             try:
                 sample = {
                     "t": round(time.time(), 1),
                     "gpus": [self._read_gpu(i) for i in range(self.count)],
+                    "host": self._host_stats(),
                 }
             except pynvml.NVMLError as e:
                 print(f"NVML error during sampling: {e}")

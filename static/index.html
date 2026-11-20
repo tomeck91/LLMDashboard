@@ -25,6 +25,9 @@
   header h1 { font-size: 18px; font-weight: 600; letter-spacing: 0.5px; }
   #live-dot { width: 9px; height: 9px; border-radius: 50%; background: #22c55e; animation: pulse 1s infinite; }
   @keyframes pulse { 50% { opacity: 0.3; } }
+  header .host-stats { display: flex; gap: 20px; margin-left: 16px; }
+  .host-stat label { display: block; font-size: 10px; letter-spacing: 1px; color: var(--muted); }
+  .host-stat b { font-size: 14px; font-weight: 600; font-variant-numeric: tabular-nums; }
   header .meta { margin-left: auto; color: var(--muted); font-size: 13px; }
 
   main { padding: 24px; max-width: 1280px; margin: 0 auto; }
@@ -34,10 +37,10 @@
   .card-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; font-size: 14px; color: var(--muted); }
   .gpu-dot { width: 10px; height: 10px; border-radius: 3px; }
 
-  .util-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
-  .util-big { font-size: 42px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
-  .util-big span { font-size: 20px; color: var(--muted); font-weight: 400; }
-  .util-label { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); }
+  .util-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 14px; }
+  .util-line { display: flex; align-items: baseline; justify-content: space-between; }
+  .util-line label { font-size: 11px; letter-spacing: 1.5px; color: var(--muted); }
+  .util-line b { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1; }
 
   .vram-bar { height: 8px; background: #1c2733; border-radius: 4px; overflow: hidden; margin-bottom: 6px; }
   .vram-bar i { display: block; height: 100%; border-radius: 4px; transition: width 0.5s ease; }
@@ -58,7 +61,11 @@
 <body>
 <header>
   <div id="live-dot"></div>
-  <h1>GPUDashboard</h1>
+  <h1>LLM Dashboard</h1>
+  <div class="host-stats">
+    <div class="host-stat"><label>CPU</label><b id="host-cpu">&ndash;</b></div>
+    <div class="host-stat"><label>RAM</label><b id="host-ram">&ndash;</b></div>
+  </div>
   <div class="meta" id="driver-meta">connecting&hellip;</div>
 </header>
 

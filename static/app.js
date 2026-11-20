@@ -11,6 +11,8 @@ const chartsEl = document.getElementById("charts");
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("driver-meta");
 const dotEl = document.getElementById("live-dot");
+const hostCpuEl = document.getElementById("host-cpu");
+const hostRamEl = document.getElementById("host-ram");
 
 let charts = {}; // metric key -> Chart instance
 
@@ -29,11 +31,19 @@ function hexToRgba(hex, a) {
   return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
 }
 
+// ---------- host (header) ----------
+function renderHost(host) {
+  if (!host) return;
+  hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
+  hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)} / ${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
+}
+
 // ---------- cards ----------
 function renderCards(data) {
   statusEl.style.display = "none";
   metaEl.textContent = `driver ${data.driver_version}`;
   dotEl.style.background = "#22c55e";
+  renderHost(data.host);
 
   cardsEl.innerHTML = data.gpus.map((g, i) => {
     const color = GPU_COLORS[i % GPU_COLORS.length];
@@ -44,9 +54,9 @@ function renderCards(data) {
           <span class="gpu-dot" style="background:${color}"></span>
           GPU ${g.index} &middot; ${g.name.replace("NVIDIA GeForce ", "")}
         </div>
-        <div class="util-row">
-          <div class="util-big">${g.util_gpu}<span>%</span></div>
-          <div class="util-label">GPU UTILIZATION<br>MEM ${g.util_mem}%</div>
+        <div class="util-grid">
+          <div class="util-line"><label>GPU UTILIZATION</label><b>${g.util_gpu}%</b></div>
+          <div class="util-line"><label>MEM BUS</label><b>${g.util_mem}%</b></div>
         </div>
         <div class="vram-bar"><i style="width:${memPct.toFixed(1)}%; background:${color}"></i></div>
         <div class="vram-text">${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB VRAM</div>
