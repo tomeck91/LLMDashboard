@@ -12,7 +12,15 @@ python -m venv .venv
 .\.venv\Scripts\python main.py
 ```
 
-Then open **http://localhost:8000**.
+Then open **http://localhost:8000** (the .bat files also do this automatically).
+
+### Quick way: batch files
+
+| File | Action |
+|---|---|
+| `start.bat` | Starts the server, opens the browser (Ctrl+C in its window stops it) |
+| `stop.bat` | Kills whatever is listening on port 8000 (safe to run when already stopped) |
+| `restart.bat` | stop + start |
 
 ## What it shows
 
