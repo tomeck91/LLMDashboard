@@ -1,4 +1,5 @@
-const GPU_COLORS = ["#22d3ee", "#a78bfa"];
+const GPU_COLORS = ["#57e389", "#57c7ff"];
+const SUP = ["\u00b9", "\u00b2", "\u00b3", "\u00b4", "\u2075", "\u2076", "\u2077", "\u2078", "\u2079", "\u2070"];
 const METRICS = [
   { key: "util_gpu", label: "GPU Utilization (%)" },
   { key: "mem_used_mib", label: "VRAM Used (MiB)" },
@@ -11,6 +12,9 @@ const chartsEl = document.getElementById("charts");
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("driver-meta");
 const dotEl = document.getElementById("live-dot");
+const clockEl = document.getElementById("clock");
+const uptimeEl = document.getElementById("uptime");
+const footGpusEl = document.getElementById("foot-gpus");
 const hostCpuEl = document.getElementById("host-cpu");
 const hostRamEl = document.getElementById("host-ram");
 const hostModelEl = document.getElementById("host-model");
@@ -27,16 +31,32 @@ function fmtTime(t) {
   return new Date(t * 1000).toLocaleTimeString([], { hour12: false });
 }
 
-function hexToRgba(hex, a) {
-  const n = parseInt(hex.slice(1), 16);
-  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${a})`;
+// btop-style level color: green -> yellow -> red
+function levelColor(pct) {
+  if (pct >= 85) return "var(--red)";
+  if (pct >= 60) return "var(--yellow)";
+  return "var(--green)";
+}
+
+// terminal segmented bar: N block cells, filled up to pct
+function seg(pct, cells = 24, color = "currentColor") {
+  const on = Math.max(0, Math.min(cells, Math.round((pct / 100) * cells)));
+  let out = "";
+  for (let i = 0; i < cells; i++) out += `<i${i < on ? ' class="on"' : ""}></i>`;
+  return `<div class="seg" style="color:${color}">${out}</div>`;
 }
 
 // ---------- host (header) ----------
 function renderHost(host, lm) {
   if (!host) return;
   hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
-  hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)} / ${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
+  hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)}/${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
+  if (host.boot_time) {
+    const up = Math.floor(Date.now() / 1000 - host.boot_time);
+    const d = Math.floor(up / 86400);
+    const hms = new Date(up * 1000).toISOString().slice(11, 19);
+    uptimeEl.textContent = `up ${d > 0 ? d + "d " : ""}${hms}`;
+  }
   if (!lm) return;
   if (lm.online && lm.loaded.length) {
     const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
@@ -63,42 +83,47 @@ function renderHost(host, lm) {
 function renderCards(data) {
   statusEl.style.display = "none";
   metaEl.textContent = `driver ${data.driver_version}`;
-  dotEl.style.background = "#22c55e";
+  dotEl.style.background = "var(--green)";
   renderHost(data.host, data.lmstudio);
+  const names = [...new Set(data.gpus.map((g) => g.name.replace("NVIDIA GeForce ", "")))];
+  footGpusEl.textContent = `${data.gpus.length} \u00d7 ${names.join(" + ")}`;
 
   cardsEl.innerHTML = data.gpus.map((g, i) => {
     const color = GPU_COLORS[i % GPU_COLORS.length];
     const memPct = g.mem_total_mib ? (g.mem_used_mib / g.mem_total_mib) * 100 : 0;
+    const tempCls = g.temp_c >= 80 ? "hot" : g.temp_c >= 70 ? "warn" : "";
+    const procTip = g.procs.map((p) => `${p.name} (PID ${p.pid})`).join(", ");
+    const procText = g.procs.length ? g.procs.map((p) => `${p.name} (${p.sm_pct}%)`).join(", ") : "none";
     return `
       <div class="card">
-        <div class="card-head">
-          <span class="gpu-dot" style="background:${color}"></span>
-          GPU ${g.index} &middot; ${g.name.replace("NVIDIA GeForce ", "")}
-        </div>
+        <div class="card-head"><span class="pnum">${SUP[i % SUP.length]}</span>GPU ${g.index} \u00b7 ${g.name.replace("NVIDIA GeForce ", "")}</div>
         <div class="util-grid">
-          <div class="util-line"><label>GPU UTILIZATION</label><b>${g.util_gpu}%</b></div>
-          <div class="util-line"><label>MEM BUS</label><b>${g.util_mem}%</b></div>
+          <div class="util-line"><label>GPU</label>${seg(g.util_gpu, 24, levelColor(g.util_gpu))}<b style="color:${levelColor(g.util_gpu)}">${g.util_gpu}%</b></div>
+          <div class="util-line"><label>MEM</label>${seg(g.util_mem, 24, levelColor(g.util_mem))}<b style="color:${levelColor(g.util_mem)}">${g.util_mem}%</b></div>
         </div>
-        <div class="vram-bar"><i style="width:${memPct.toFixed(1)}%; background:${color}"></i></div>
-        <div class="vram-text">${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB VRAM</div>
-        <div class="proc-text" title="${g.procs.map((p) => `${p.name} (PID ${p.pid})`).join(", ")}">${g.procs.length ? g.procs.map((p) => `${p.name} (${p.sm_pct}%)`).join(", ") : "no active processes"}</div>
+        <div class="row"><span class="lbl">VRAM</span><span class="dots"></span><b>${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB (${memPct.toFixed(0)}%)</b></div>
+        ${seg(memPct, 24, color)}
+        <div class="row proc-row" title="${procTip}"><span class="lbl">PROC</span><span class="dots"></span><b>${procText}</b></div>
         <div class="stats-grid">
-          <div class="stat"><label>TEMP</label><b>${g.temp_c}&deg;C</b></div>
-          <div class="stat"><label>POWER</label><b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
-          <div class="stat"><label>CLOCK</label><b>${g.clock_graphics_mhz} MHz</b></div>
-          <div class="stat"><label>FAN</label><b>${g.fan_pct == null ? "N/A" : g.fan_pct + "%"}</b></div>
+          <div class="row"><span class="lbl">TEMP</span><span class="dots"></span><b class="${tempCls}">${g.temp_c}&deg;C</b></div>
+          <div class="row"><span class="lbl">POWER</span><span class="dots"></span><b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
+          <div class="row"><span class="lbl">CLOCK</span><span class="dots"></span><b>${g.clock_graphics_mhz} MHz</b></div>
+          <div class="row"><span class="lbl">FAN</span><span class="dots"></span><b>${g.fan_pct == null ? "N/A" : g.fan_pct + "%"}</b></div>
         </div>
       </div>`;
   }).join("");
 }
 
 // ---------- charts ----------
+const MONO = '"Cascadia Mono", Consolas, "DejaVu Sans Mono", monospace';
+
 function ensureCharts() {
-  for (const m of METRICS) {
+  for (let n = 0; n < METRICS.length; n++) {
+    const m = METRICS[n];
     if (charts[m.key]) continue;
     const panel = document.createElement("div");
     panel.className = "chart-panel";
-    panel.innerHTML = `<h3>${m.label}</h3><div class="chart-box"><canvas></canvas></div>`;
+    panel.innerHTML = `<h3><span class="pnum">${SUP[(n + 2) % SUP.length]}</span>${m.label}</h3><div class="chart-box"><canvas></canvas></div>`;
     chartsEl.appendChild(panel);
 
     const ctx = panel.querySelector("canvas").getContext("2d");
@@ -110,10 +135,21 @@ function ensureCharts() {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
-        plugins: { legend: { labels: { color: "#8b95a5", boxWidth: 12 } } },
+        plugins: {
+          legend: { labels: { color: "#9a9a9a", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
+          tooltip: { titleFont: { family: MONO, size: 10 }, bodyFont: { family: MONO, size: 10 } },
+        },
         scales: {
-          x: { ticks: { color: "#647084", maxTicksLimit: 6, autoSkip: true }, grid: { color: "#1f2937" } },
-          y: { ticks: { color: "#647084" }, grid: { color: "#1f2937" } },
+          x: {
+            ticks: { color: "#666", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
+            grid: { color: "#1a1a1a" },
+            border: { color: "#2e2e2e" },
+          },
+          y: {
+            ticks: { color: "#666", font: { family: MONO, size: 10 } },
+            grid: { color: "#1a1a1a" },
+            border: { color: "#2e2e2e" },
+          },
         },
       },
     });
@@ -130,11 +166,10 @@ function updateCharts(hist) {
       label: `GPU ${g.index}`,
       data: g[m.key],
       borderColor: GPU_COLORS[i % GPU_COLORS.length],
-      backgroundColor: hexToRgba(GPU_COLORS[i % GPU_COLORS.length], 0.12),
-      fill: true,
+      fill: false,
       pointRadius: 0,
-      borderWidth: 1.5,
-      tension: 0.25,
+      borderWidth: 1,
+      tension: 0,
     }));
     chart.update("none");
   }
@@ -142,11 +177,12 @@ function updateCharts(hist) {
 
 // ---------- polling ----------
 async function tick() {
+  clockEl.textContent = new Date().toLocaleTimeString([], { hour12: false });
   try {
     const data = await fetchJSON("/api/gpus");
     if (data.gpus.length) renderCards(data);
   } catch (e) {
-    dotEl.style.background = "#ef4444";
+    dotEl.style.background = "var(--red)";
     metaEl.textContent = "connection lost — retrying…";
   }
 }

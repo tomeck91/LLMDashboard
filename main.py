@@ -102,6 +102,7 @@ class Sampler:
             "ram_used_gb": round(mem.used / 1024**3, 1),
             "ram_total_gb": round(mem.total / 1024**3, 1),
             "ram_pct": mem.percent,
+            "boot_time": psutil.boot_time(),  # epoch s; frontend shows btop-style "up HH:MM:SS"
         }
 
     def _lmstudio_stats(self, now):
