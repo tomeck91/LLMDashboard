@@ -1,4 +1,4 @@
-const GPU_COLORS = ["#ff2a6d", "#00f0ff"]; // hot pink / neon cyan
+const GPU_COLORS = ["#ffaa22", "#ffdd88"]; // amber / warm amber-light
 const SUP = ["\u00b9", "\u00b2", "\u00b3", "\u00b4", "\u2075", "\u2076", "\u2077", "\u2078", "\u2079", "\u2070"];
 const METRICS = [
   { key: "util_gpu", label: "GPU Utilization (%)" },
@@ -32,11 +32,11 @@ function fmtTime(t) {
   return new Date(t * 1000).toLocaleTimeString([], { hour12: false });
 }
 
-// level color: cyan -> acid yellow -> hot pink
+// level color: amber -> warn -> hot red
 function levelColor(pct) {
-  if (pct >= 85) return "var(--pink)";
-  if (pct >= 60) return "var(--acid)";
-  return "var(--cyan)";
+  if (pct >= 85) return "var(--hot)";
+  if (pct >= 60) return "var(--warn)";
+  return "var(--amber)";
 }
 
 // terminal segmented bar: N block cells, filled up to pct
@@ -106,7 +106,7 @@ function renderCards(data) {
   footGpusEl.textContent = `${data.gpus.length} \u00d7 ${names.join(" + ")}`;
 
   cardsEl.innerHTML = data.gpus.map((g, i) => {
-    const color = "#00f0ff"; // neutral cyan for all bars
+    const color = "#ffaa22"; // warm amber for all bars
     const memPct = g.mem_total_mib ? (g.mem_used_mib / g.mem_total_mib) * 100 : 0;
     const tempCls = g.temp_c >= 80 ? "hot" : g.temp_c >= 70 ? "warn" : "";
     const procTip = g.procs.map((p) => `${p.name} (PID ${p.pid})`).join(", ");
@@ -155,19 +155,19 @@ function ensureCharts() {
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { labels: { color: "#8a92b8", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
+          legend: { labels: { color: "#b8a078", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
           tooltip: { titleFont: { family: MONO, size: 10 }, bodyFont: { family: MONO, size: 10 } },
         },
         scales: {
           x: {
-            ticks: { color: "#6b7394", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
-            grid: { color: "rgba(181, 55, 242, 0.14)" },
-            border: { color: "rgba(0, 240, 255, 0.25)" },
+            ticks: { color: "#8a7a52", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
+            grid: { color: "rgba(136, 85, 0, 0.14)" },
+            border: { color: "rgba(255, 170, 34, 0.25)" },
           },
           y: {
-            ticks: { color: "#6b7394", font: { family: MONO, size: 10 } },
-            grid: { color: "rgba(181, 55, 242, 0.14)" },
-            border: { color: "rgba(0, 240, 255, 0.25)" },
+            ticks: { color: "#8a7a52", font: { family: MONO, size: 10 } },
+            grid: { color: "rgba(136, 85, 0, 0.14)" },
+            border: { color: "rgba(255, 170, 34, 0.25)" },
           },
         },
       },

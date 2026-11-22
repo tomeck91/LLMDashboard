@@ -236,14 +236,32 @@ class Sampler:
             self._thread = threading.Thread(target=self._run, daemon=True)
             self._thread.start()
 
+    def _wait_for_first_sample(self, timeout: float = 5.0):
+        """Block until first sample is available or timeout."""
+        import time
+        start = time.time()
+        while self._latest is None:
+            if time.time() - start > timeout:
+                return
+            time.sleep(0.1)
+
     def snapshot(self) -> dict | None:
         """Return latest sample or None if not yet sampled."""
         self._ensure_started()
         with self._lock:
             return self._latest
 
+    def snapshot_blocking(self, timeout: float = 5.0) -> dict | None:
+        """Return latest sample, waiting up to timeout for first sample."""
+        self._ensure_started()
+        self._wait_for_first_sample(timeout)
+        with self._lock:
+            return self._latest
+
     def history_payload(self, minutes: int = 5) -> dict:
         """Return time series for charts."""
+        # Ensure sampler is running before accessing properties
+        self._ensure_started()
         n = min(int(minutes * 60), len(self.history))
         samples = list(self.history)[-n:] if n else []
         gpus = [
@@ -326,7 +344,7 @@ app = FastAPI(title="GPUDashboard")
 @app.get("/api/gpus")
 def api_gpus():
     sampler = get_sampler()
-    snap = sampler.snapshot() or {"t": None, "gpus": []}
+    snap = sampler.snapshot_blocking(timeout=2) or {"t": None, "gpus": []}
     try:
         driver = sampler.driver_version
     except RuntimeError:
@@ -337,9 +355,12 @@ def api_gpus():
 @app.get("/api/history")
 def api_history(minutes: int = 5):
     sampler = get_sampler()
+    # Wait briefly for first sample before building history
+    sampler.snapshot_blocking(timeout=1)
     return sampler.history_payload(min(max(minutes, 1), 30))
 
 
+# Mount static files AFTER API routes so /static/* and / work correctly
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 
