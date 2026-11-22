@@ -177,11 +177,11 @@ function ensureCharts() {
 
 // Per-metric fixed Y range: [min, max] — avoids auto-scale jitter
 const METRIC_RANGE = {
-  util_gpu:   [0, 105],
-  util_mem:   [0, 105],
-  mem_used_mib: null,    // computed from data once
-  temp_c:     [0, 100],
-  power_w:    null,       // computed from data once
+  util_gpu:       [0, 100],
+  util_mem:       [0, 100],
+  mem_used_mib:   [0, 24 * 1024],  // 0–24 GB in MiB
+  temp_c:         [0, 100],
+  power_w:        null,            // computed from data once
 };
 
 function updateCharts(hist) {
