@@ -19,7 +19,8 @@ The dashboard is a functional single-file backend (`main.py`) + single-file fron
 
 ---
 
-**Status:** C1 — Deepen the Sampler — **in progress**
+**Status:** C1 — Deepen the Sampler — **in progress**  
+**Status:** C2 — Collapse the Two LM Studio Readers — **DONE** (merged HTTP + CLI into single `LmStudioReader`, unified output shape, frontend updated)
 
 Implementation:
 1. Added reader classes as inner classes in `main.py`
@@ -30,6 +31,19 @@ Implementation:
 6. Added `driver_version`, `count`, `names` as properties or included in snapshot
 7. Replaced `sampler = Sampler()` with `get_sampler()` factory
 8. Writing tests for each reader and for `Sampler.snapshot()`, `Sampler.history_payload()`
+
+---
+
+**Status:** C2 — Collapse the Two LM Studio Readers — **DONE**
+
+Implementation:
+1. Created unified `LmStudioReader` that merges HTTP API + CLI data sources
+2. `_merge_models()` function joins by display name, preserves HTTP config fields, adds CLI runtime fields (status, ttl, device)
+3. Frontend `renderHost()` simplified — single `lm` parameter instead of `lm, lms`
+4. `renderModels()` updated to use unified shape (`size_gb` instead of `sizeBytes`)
+5. API response: removed `lms` key; `lmstudio` now contains merged data
+6. Tests: added `TestMergeModels` (5 tests covering HTTP-only, CLI-only, merge, fill-missing, multi-model)
+7. Spec updated to reflect new unified output shape
 
 ---
 

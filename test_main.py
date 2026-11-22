@@ -1,6 +1,6 @@
 """Unit tests for GPUDashboard main module."""
 import pytest
-from main import NvmlReader, PsutilReader, LmStudioReader, LmsReader
+from main import NvmlReader, PsutilReader, LmStudioReader, _merge_models
 
 
 class TestNvmlReader:
@@ -47,7 +47,7 @@ class TestPsutilReader:
 
 
 class TestLmStudioReader:
-    """Tests for LM Studio reader."""
+    """Tests for unified LM Studio reader."""
 
     def test_poll_returns_correct_structure(self):
         """poll() returns dict with expected keys."""
@@ -58,12 +58,87 @@ class TestLmStudioReader:
         # Note: may be offline if LM Studio not running, but structure should match
 
 
-class TestLmsReader:
-    """Tests for LMS CLI reader."""
+class TestMergeModels:
+    """Tests for the model merge logic."""
 
-    def test_poll_returns_correct_structure(self):
-        """poll() returns dict with expected keys."""
-        reader = LmsReader()
-        sample = reader.poll()
-        assert "loaded" in sample
-        # Note: may be empty if lms not installed or no models loaded
+    def test_http_only(self):
+        """HTTP models with no CLI data pass through."""
+        http = [
+            {"name": "test-model", "quant": "Q4_K_M", "context": 4096, "parallel": 1, "size_gb": 2.3}
+        ]
+        result = _merge_models(http, [])
+        assert len(result) == 1
+        assert result[0]["name"] == "test-model"
+        assert result[0]["quant"] == "Q4_K_M"
+        assert result[0]["status"] is None
+
+    def test_cli_only(self):
+        """CLI models with no HTTP data include runtime fields."""
+        cli = [
+            {"name": "cli-model", "quant": "Q5_K_S", "size_gb": 3.1,
+             "context": 8192, "parallel": 2, "status": "idle", "ttl_remaining": "05:00", "device": "Local"}
+        ]
+        result = _merge_models([], cli)
+        assert len(result) == 1
+        assert result[0]["name"] == "cli-model"
+        assert result[0]["status"] == "idle"
+        assert result[0]["ttl_remaining"] == "05:00"
+
+    def test_merge_both_sources(self):
+        """Models from both sources merge by name, CLI adds runtime fields."""
+        http = [
+            {"name": "merged-model", "quant": "Q4_K_M", "context": 4096, "parallel": 1, "size_gb": 2.3}
+        ]
+        cli = [
+            {"name": "merged-model", "quant": "Q5_K_S", "size_gb": 2.5,
+             "context": None, "parallel": None, "status": "idle", "ttl_remaining": "10:00", "device": "Local"}
+        ]
+        result = _merge_models(http, cli)
+        assert len(result) == 1
+        # HTTP fields preserved (quant, context, parallel from HTTP)
+        assert result[0]["quant"] == "Q4_K_M"
+        assert result[0]["context"] == 4096
+        # CLI runtime fields added
+        assert result[0]["status"] == "idle"
+        assert result[0]["ttl_remaining"] == "10:00"
+
+    def test_merge_cli_fills_missing_http(self):
+        """CLI fills missing fields when HTTP has none."""
+        http = [
+            {"name": "partial-model", "quant": None, "size_gb": None, "context": None, "parallel": None}
+        ]
+        cli = [
+            {"name": "partial-model", "quant": "Q4_K_M", "size_gb": 2.3,
+             "context": 4096, "parallel": 1, "status": "loaded", "ttl_remaining": None, "device": "Local"}
+        ]
+        result = _merge_models(http, cli)
+        assert len(result) == 1
+        assert result[0]["quant"] == "Q4_K_M"
+        assert result[0]["size_gb"] == 2.3
+        assert result[0]["status"] == "loaded"
+
+    def test_multiple_models(self):
+        """Multiple models from each source merge correctly."""
+        http = [
+            {"name": "model-a", "quant": "Q4", "context": 4096, "parallel": 1, "size_gb": 2.0},
+            {"name": "model-b", "quant": "Q5", "context": 8192, "parallel": 2, "size_gb": 3.0},
+        ]
+        cli = [
+            {"name": "model-a", "quant": None, "size_gb": None, "context": None, "parallel": None,
+             "status": "idle", "ttl_remaining": "01:00", "device": "Local"},
+            {"name": "model-c", "quant": "Q6", "size_gb": 4.0, "context": 16384, "parallel": 1,
+             "status": "loading", "ttl_remaining": None, "device": "Local"},
+        ]
+        result = _merge_models(http, cli)
+        assert len(result) == 3
+        names = {m["name"] for m in result}
+        assert names == {"model-a", "model-b", "model-c"}
+        # model-a: merged — HTTP quant + CLI status
+        a = next(m for m in result if m["name"] == "model-a")
+        assert a["quant"] == "Q4" and a["status"] == "idle"
+        # model-b: HTTP only
+        b = next(m for m in result if m["name"] == "model-b")
+        assert b["status"] is None
+        # model-c: CLI only
+        c = next(m for m in result if m["name"] == "model-c")
+        assert c["status"] == "loading"

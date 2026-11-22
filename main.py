@@ -15,6 +15,8 @@ from collections import deque
 import psutil
 import pynvml
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 SAMPLE_INTERVAL = 1.0     # seconds between samples
@@ -108,43 +110,58 @@ class PsutilReader:
 
 
 class LmStudioReader:
-    """LM Studio HTTP API data source — polls /api/v1/models."""
+    """Unified LM Studio reader — merges HTTP API + CLI data sources.
+
+    The HTTP API (GET /api/v1/models) provides model identity and config
+    metadata (name, quantization, context_length, parallel). The CLI tool
+    (`lms ps --json`) provides runtime state (status, TTL countdown, device).
+
+    Both sources are polled in the background; results are merged by model
+    name so the frontend receives one shape regardless of which source
+    provided each field.
+    """
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._cached = {"online": False, "loaded": []}
-        self._last_poll = 0.0
+        self._cached: dict = {"online": False, "loaded": []}
+        self._last_http_poll = 0.0
+        self._cli_reader = _LmsCliReader()
 
     def poll(self) -> dict:
-        now = time.time()
-        if now - self._last_poll < LMSTUDIO_POLL_INTERVAL:
-            return self._cached
-        self._last_poll = now
-        try:
-            with urllib.request.urlopen(LMSTUDIO_URL, timeout=2) as r:
-                data = json.loads(r.read().decode("utf-8"))
-            loaded = []
-            for m in data.get("models", []):
-                for inst in m.get("loaded_instances", []):
-                    q = m.get("quantization") or {}
-                    size = m.get("size_bytes")
-                    loaded.append({
-                        "name": m.get("display_name") or m.get("key"),
-                        "quant": q.get("name"),
-                        "context": (inst.get("config") or {}).get("context_length"),
-                        "size_gb": round(size / 1024**3, 1) if size else None,
-                        "max_context": m.get("max_context_length"),
-                    })
-            result = {"online": True, "loaded": loaded}
-        except Exception:
-            result = {"online": False, "loaded": []}
-        with self._lock:
-            self._cached = result
-        return result
+        """Return merged model data from both sources."""
+        http_data = _poll_http_raw()
+        cli_data = self._cli_reader.poll()
+        return {
+            "online": http_data["online"] or bool(cli_data.get("loaded")),
+            "loaded": _merge_models(http_data.get("loaded", []), cli_data.get("loaded", [])),
+        }
 
 
-class LmsReader:
-    """LMS CLI data source — polls `lms ps --json` in background thread."""
+def _poll_http_raw() -> dict:
+    """Poll LM Studio HTTP API. Returns {online, loaded}."""
+    try:
+        with urllib.request.urlopen(LMSTUDIO_URL, timeout=2) as r:
+            data = json.loads(r.read().decode("utf-8"))
+        loaded = []
+        for m in data.get("models", []):
+            for inst in m.get("loaded_instances", []):
+                q = m.get("quantization") or {}
+                size = m.get("size_bytes")
+                config = (inst.get("config") or {})
+                loaded.append({
+                    "name": m.get("display_name") or m.get("key"),
+                    "quant": q.get("name"),
+                    "context": config.get("context_length"),
+                    "parallel": config.get("parallel"),
+                    "size_gb": round(size / 1024**3, 1) if size else None,
+                })
+        return {"online": True, "loaded": loaded}
+    except Exception:
+        return {"online": False, "loaded": []}
+
+
+class _LmsCliReader:
+    """Internal: polls `lms ps --json` in a background thread."""
 
     def __init__(self):
         self._lock = threading.Lock()
@@ -176,7 +193,6 @@ class LmsReader:
             for m in data:
                 ttl = m.get("ttlMs")
                 loaded.append({
-                    "identifier": m.get("identifier"),
                     "name": m.get("displayName"),
                     "status": m.get("status"),  # idle|loading|loaded|unloading
                     "size_gb": round(m.get("sizeBytes", 0) / 1024**3, 1),
@@ -186,11 +202,6 @@ class LmsReader:
                     "ttl_ms": ttl,
                     "ttl_remaining": _format_ttl(ttl) if ttl else None,
                     "device": "Local" if m.get("deviceIdentifier") is None else m.get("deviceIdentifier"),
-                    "sizeBytes": m.get("sizeBytes"),
-                    "maxContextLength": m.get("maxContextLength"),
-                    "quantization": m.get("quantization"),
-                    "modelKey": m.get("modelKey"),
-                    "publisher": m.get("publisher"),
                 })
             with self._lock:
                 self.loaded = loaded
@@ -201,6 +212,69 @@ class LmsReader:
     def poll(self) -> dict:
         with self._lock:
             return {"loaded": list(self.loaded)}
+
+
+def _merge_models(http_models: list[dict], cli_models: list[dict]) -> list[dict]:
+    """Merge HTTP API + CLI model data into a single unified shape.
+
+    Each model is keyed by its ``name`` field (display name from either source).
+    CLI data provides runtime fields (status, ttl, device); HTTP data provides
+    config fields (context_length from loaded_instances[].config, parallel from
+    loaded_instances[].config.parallel). Where both provide the same field,
+    the more complete value wins.
+
+    Returns list of dicts with this shape:
+        {name, quant, size_gb, context, parallel, status, ttl_remaining, device}
+    """
+    merged: dict[str, dict] = {}
+
+    for m in http_models:
+        name = m.get("name") or "unknown"
+        merged[name] = {
+            "name": name,
+            "quant": m.get("quant"),
+            "size_gb": m.get("size_gb"),
+            "context": m.get("context"),
+            "parallel": m.get("parallel"),
+            "status": None,
+            "ttl_remaining": None,
+            "device": None,
+        }
+
+    for m in cli_models:
+        name = m.get("name") or "unknown"
+        if name in merged:
+            # Merge into existing HTTP entry — CLI provides runtime fields
+            entry = merged[name]
+            if not entry["quant"] and m.get("quant"):
+                entry["quant"] = m["quant"]
+            if not entry["size_gb"] and m.get("size_gb"):
+                entry["size_gb"] = m["size_gb"]
+            if entry["context"] is None and m.get("context"):
+                entry["context"] = m["context"]
+            if entry["parallel"] is None and m.get("parallel"):
+                entry["parallel"] = m["parallel"]
+            # Always add CLI runtime fields (status, ttl, device)
+            if not entry["status"] and m.get("status"):
+                entry["status"] = m["status"]
+            if not entry["ttl_remaining"] and m.get("ttl_remaining"):
+                entry["ttl_remaining"] = m["ttl_remaining"]
+            if not entry["device"] and m.get("device"):
+                entry["device"] = m["device"]
+        else:
+            # CLI-only model (not in HTTP API)
+            merged[name] = {
+                "name": name,
+                "quant": m.get("quant"),
+                "size_gb": m.get("size_gb"),
+                "context": m.get("context"),
+                "parallel": m.get("parallel"),
+                "status": m.get("status"),
+                "ttl_remaining": m.get("ttl_remaining"),
+                "device": m.get("device"),
+            }
+
+    return list(merged.values())
 
 
 def _format_ttl(ms):
@@ -279,11 +353,10 @@ class Sampler:
 
     def _run(self):
         """Background loop: poll all sources every SAMPLE_INTERVAL seconds."""
-        # Initialize readers (NVML, psutil, HTTP, CLI)
+        # Initialize readers (NVML, psutil, HTTP+CLI)
         self._gpu_reader = NvmlReader()
         self._host_reader = PsutilReader()
         self._lmstudio_reader = LmStudioReader()
-        self._lms_reader = LmsReader()
 
         while True:
             try:
@@ -293,7 +366,6 @@ class Sampler:
                     "gpus": [self._gpu_reader.poll(i) for i in range(self._gpu_reader.count)],
                     "host": self._host_reader.poll(),
                     "lmstudio": self._lmstudio_reader.poll(),
-                    "lms": self._lms_reader.poll(),
                 }
             except pynvml.NVMLError as e:
                 print(f"NVML error during sampling: {e}")
@@ -365,6 +437,14 @@ def api_history(minutes: int = 5):
 
 # Mount static files AFTER API routes so /static/* and / work correctly
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+
+@app.middleware("http")
+async def add_no_cache(request, call_next):
+    response = await call_next(request)
+    if request.url.path.startswith("/static/") or request.url.path == "/":
+        response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 if __name__ == "__main__":

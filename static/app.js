@@ -1,10 +1,10 @@
 const GPU_COLORS = ["#ffaa22", "#ffdd88"]; // amber / warm amber-light
 const SUP = ["\u00b9", "\u00b2", "\u00b3", "\u00b4", "\u2075", "\u2076", "\u2077", "\u2078", "\u2079", "\u2070"];
 const METRICS = [
-  { key: "util_gpu", label: "GPU Utilization (%)" },
-  { key: "mem_used_mib", label: "VRAM Used (MiB)" },
-  { key: "temp_c", label: "Temperature (\u00b0C)" },
-  { key: "power_w", label: "Power Draw (W)" },
+  { key: "util_gpu", label: "GPU Utilization (%)", tickSuffix: "%" },
+  { key: "mem_used_mib", label: "VRAM Used (MiB / GB)", toGB: true, tickSuffix: "GB" },
+  { key: "temp_c", label: "Temperature (°C)", tickSuffix: "°C" },
+  { key: "power_w", label: "Power Draw (W)", tickSuffix: " W" },
 ];
 
 const cardsEl = document.getElementById("cards");
@@ -48,7 +48,7 @@ function seg(pct, cells = 24, color = "currentColor") {
 }
 
 // ---------- host (header) ----------
-function renderHost(host, lm, lms) {
+function renderHost(host, lm) {
   if (!host) return;
   hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
   hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)}/${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
@@ -59,40 +59,37 @@ function renderHost(host, lm, lms) {
     uptimeEl.textContent = `up ${d > 0 ? d + "d " : ""}${hms}`;
   }
   const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
-  // LM Studio model info
+  // Unified LM Studio model info (merged HTTP + CLI)
   if (lm && lm.online && lm.loaded.length) {
     const detail = (m) => {
       const parts = [];
       if (m.quant) parts.push(m.quant);
       if (m.size_gb) parts.push(m.size_gb + " GB");
-      if (m.max_context) parts.push("ctx " + fmtCtx(m.max_context));
+      if (m.context) parts.push("ctx " + fmtCtx(m.context));
       return parts.length ? ` (${parts.join(" · ")})` : "";
     };
     const m = lm.loaded[0];
     const extra = lm.loaded.length > 1 ? ` +${lm.loaded.length - 1} more` : "";
-    hostModelEl.textContent = m.name + detail(m) + extra;
-    hostModelEl.title = lm.loaded
-      .map((x) => `${x.name}${detail(x)}${x.context ? `, running ctx ${x.context}` : ""}`)
-      .join("\n");
+    // Status badge + TTL from CLI runtime data
+    let badgeHtml = "";
+    if (m.status) {
+      const statusCls = ["idle", "processingPrompt"].includes(m.status) ? "ok" : m.status === "loading" ? "warn" : m.status === "unloading" ? "hot" : "ok";
+      const ttlHtml = m.ttl_remaining ? ` · ttl ${m.ttl_remaining}` : "";
+      badgeHtml = `<span class="${statusCls}" style="font-size:11px;margin-left:8px">${m.status.toUpperCase()}</span>${ttlHtml}`;
+    }
+    hostModelEl.innerHTML = m.name + detail(m) + extra + badgeHtml;
+    // Tooltip shows all loaded models with details
+    hostModelEl.title = lm.loaded.map((x) => {
+      let s = `${x.name}${detail(x)}`;
+      if (x.status) s += ` [${x.status}]`;
+      if (x.ttl_remaining) s += ` · ttl ${x.ttl_remaining}`;
+      if (x.parallel) s += ` · parallel ${x.parallel}`;
+      if (x.device !== "Local") s += ` · ${x.device}`;
+      return s;
+    }).join("\n");
   } else {
     hostModelEl.textContent = lm ? (lm.online ? "none loaded" : "LM Studio offline") : "—";
     hostModelEl.title = "";
-  }
-  // LMS status badge (overrides text when loaded)
-  if (lms && lms.loaded.length) {
-    const m = lms.loaded[0];
-    const statusCls = ["idle", "processingPrompt"].includes(m.status) ? "ok" : m.status === "loading" ? "warn" : m.status === "unloading" ? "hot" : "ok";
-    const ttlHtml = m.ttl_remaining ? ` · ttl ${m.ttl_remaining}` : "";
-    const badge = `<span class="${statusCls}" style="font-size:11px;margin-left:8px">${m.status.toUpperCase()}</span>${ttlHtml}`;
-    const detail = (md) => {
-      const parts = [];
-      if (md.quant) parts.push(md.quant);
-      if (md.size_gb) parts.push(md.size_gb + " GB");
-      if (md.context) parts.push("ctx " + fmtCtx(md.context));
-      return parts.length ? ` (${parts.join(" · ")})` : "";
-    };
-    hostModelEl.innerHTML = m.name + detail(m) + badge;
-    hostModelEl.title = `parallel ${m.parallel} · ${m.device}`;
   }
 }
 
@@ -102,6 +99,8 @@ function renderCards(data) {
   metaEl.textContent = `driver ${data.driver_version}`;
   dotEl.classList.remove("offline");
   renderHost(data.host, data.lmstudio);
+  // Track max NVML power limit for chart Y-axis
+  maxPowerW = Math.max(...data.gpus.map(g => g.power_limit_w || 0), 350);
   const names = [...new Set(data.gpus.map((g) => g.name.replace("NVIDIA GeForce ", "")))];
   footGpusEl.textContent = `${data.gpus.length} \u00d7 ${names.join(" + ")}`;
 
@@ -179,10 +178,13 @@ function ensureCharts() {
 const METRIC_RANGE = {
   util_gpu:       [0, 100],
   util_mem:       [0, 100],
-  mem_used_mib:   [0, 24 * 1024],  // 0–24 GB in MiB
+  mem_used_mib:   [0, 24],             // 0–24 GB (display)
   temp_c:         [0, 100],
-  power_w:        null,            // computed from data once
+  power_w:        null,                // set from NVML power_limit_w once known
 };
+
+// Track max power limit across all GPUs (from NVML)
+let maxPowerW = 350; // fallback to common max if not yet known
 
 function updateCharts(hist) {
   ensureCharts();
@@ -192,7 +194,7 @@ function updateCharts(hist) {
     chart.data.labels = labels;
     chart.data.datasets = hist.gpus.map((g, i) => ({
       label: `GPU ${g.index}`,
-      data: g[m.key],
+      data: m.toGB ? g[m.key].map(v => +(v / 1024).toFixed(1)) : g[m.key],
       borderColor: GPU_COLORS[i % GPU_COLORS.length],
       fill: false,
       pointRadius: 0,
@@ -202,16 +204,29 @@ function updateCharts(hist) {
 
     // Compute fixed Y range for metrics without a hard-coded range
     if (METRIC_RANGE[m.key] === null) {
-      const allVals = hist.gpus.flatMap((g) => g[m.key]);
+      const allVals = chart.data.datasets.flatMap(d => d.data);
       const lo = Math.min(...allVals);
       const hi = Math.max(...allVals);
-      const pad = Math.max(2, (hi - lo) * 0.05); // 5% padding
-      chart.options.scales.y.suggestedMin = Math.max(0, lo - pad);
-      chart.options.scales.y.suggestedMax = hi + pad;
+      // Power: cap max at NVML power_limit_w, don't auto-scale beyond it
+      if (m.key === "power_w") {
+        chart.options.scales.y.suggestedMin = 0;
+        chart.options.scales.y.suggestedMax = maxPowerW;
+      } else {
+        const pad = Math.max(0.5, (hi - lo) * 0.05); // 5% padding
+        chart.options.scales.y.suggestedMin = Math.max(0, +(lo - pad).toFixed(1));
+        chart.options.scales.y.suggestedMax = +(hi + pad).toFixed(1);
+      }
     } else {
       const [lo, hi] = METRIC_RANGE[m.key];
       chart.options.scales.y.suggestedMin = lo;
       chart.options.scales.y.suggestedMax = hi;
+    }
+
+    // Add unit suffix to y-axis ticks
+    if (m.tickSuffix) {
+      chart.options.scales.y.ticks.callback = (value) => value + m.tickSuffix;
+    } else {
+      chart.options.scales.y.ticks.callback = null;
     }
 
     chart.update("none");
@@ -224,8 +239,8 @@ async function tick() {
   try {
     const data = await fetchJSON("/api/gpus");
     if (data.gpus.length) renderCards(data);
-    renderHost(data.host, data.lmstudio, data.lms);
-    renderModels(data.lms);
+    renderHost(data.host, data.lmstudio);
+    renderModels(data.lmstudio);
     dotEl.classList.remove("offline");
     metaEl.textContent = data.driver_version || "";
   } catch (e) {
@@ -242,8 +257,8 @@ async function tickHistory() {
 }
 
 // ---------- models panel ----------
-function renderModels(lms) {
-  if (!lms || !lms.loaded.length) return;
+function renderModels(lm) {
+  if (!lm || !lm.loaded.length) return;
   modelsEl.style.display = "block";
   if (!modelsEl.querySelector("table")) {
     modelsEl.innerHTML = `<table>
@@ -252,9 +267,9 @@ function renderModels(lms) {
     </table>`;
   }
   const tbody = modelsEl.querySelector("#models-tbody");
-  const fmtSize = (b) => b >= 1024**3 ? (b / 1024**3).toFixed(1) + " GB" : (b / 1024**2).toFixed(0) + " MB";
+  const fmtSize = (gb) => gb != null ? gb.toFixed(1) + " GB" : "—";
   const fmtCtx = (n) => n >= 1000 ? (n / 1000).toFixed(0) + "k" : String(n);
-  const sorted = [...lms.loaded].sort((a, b) => {
+  const sorted = [...lm.loaded].sort((a, b) => {
     const order = { loaded: 0, loading: 1, processingPrompt: 0, idle: 2, unloading: 3 };
     return (order[a.status] ?? 2) - (order[b.status] ?? 2);
   });
@@ -266,7 +281,7 @@ function renderModels(lms) {
     return `<tr>
       <td>${m.name}</td>
       <td><span class="badge ${cls}">${badgeLabel}</span></td>
-      <td class="size">${fmtSize(m.sizeBytes)}</td>
+      <td class="size">${fmtSize(m.size_gb)}</td>
       <td>${m.quant || "—"}</td>
       <td>${m.context ? fmtCtx(m.context) : "—"}</td>
       <td>${ttl || "—"}</td>
