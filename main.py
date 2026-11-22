@@ -12,6 +12,7 @@ import threading
 import time
 import urllib.request
 from collections import deque
+from pathlib import Path
 
 import psutil
 import pynvml
@@ -23,7 +24,8 @@ SAMPLE_INTERVAL = 1.0     # seconds between samples
 HISTORY_SECONDS = 300     # keep last 5 minutes
 LMSTUDIO_URL = "http://127.0.0.1:1234/api/v1/models"
 LMS_POLL_INTERVAL = 10.0  # lms ps changes only on load/unload
-LMS_FIRST_POLL = 3.0  # first poll after 3 s so panel appears quickly
+LMS_FIRST_POLL = 3.0      # first poll after 3 s so panel appears quickly
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent  # git repo root
 
 
 def _to_str(v):
@@ -432,6 +434,11 @@ def api_history(minutes: int = 5):
     return sampler.history_payload(min(max(minutes, 1), 30))
 
 
+@app.get("/health")
+def health_check():
+    return {"status": "ok"}
+
+
 # Route for / must come BEFORE static mounts (mounts act as catch-all routes)
 @app.get("/")
 async def serve_index():
@@ -452,26 +459,12 @@ def _git_tag():
     try:
         result = subprocess.run(
             ["git", "describe", "--tags", "--abbrev=0"],
-            capture_output=True, text=True, timeout=3, cwd="C:\\AI\\OpenCode\\GPUDashboard",
+            capture_output=True, text=True, timeout=3, cwd=str(_PROJECT_ROOT),
         )
         tag = result.stdout.strip() or None
     except Exception:
         tag = None
     return tag or "dev"
-
-
-@app.get("/")
-async def serve_index():
-    """Serve index.html with injected version from git tags."""
-    html_path = os.path.join("static", "index.html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
-    tag = _git_tag()
-    print(f"[serve_index] tag={tag}, found v0-stable={'v0-stable' in html}")
-    html = html.replace("v0-stable", tag)
-    if "MARKER_42" not in html:
-        html += "<!-- MARKER_42 -->"
-    return HTMLResponse(content=html)
 
 
 @app.middleware("http")
