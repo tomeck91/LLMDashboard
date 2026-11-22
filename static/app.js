@@ -9,6 +9,7 @@ const METRICS = [
 
 const cardsEl = document.getElementById("cards");
 const chartsEl = document.getElementById("charts");
+const modelsEl = document.getElementById("models");
 const statusEl = document.getElementById("status");
 const metaEl = document.getElementById("driver-meta");
 const dotEl = document.getElementById("live-dot");
@@ -47,7 +48,7 @@ function seg(pct, cells = 24, color = "currentColor") {
 }
 
 // ---------- host (header) ----------
-function renderHost(host, lm) {
+function renderHost(host, lm, lms) {
   if (!host) return;
   hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
   hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)}/${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
@@ -57,9 +58,9 @@ function renderHost(host, lm) {
     const hms = new Date(up * 1000).toISOString().slice(11, 19);
     uptimeEl.textContent = `up ${d > 0 ? d + "d " : ""}${hms}`;
   }
-  if (!lm) return;
-  if (lm.online && lm.loaded.length) {
-    const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+  const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
+  // LM Studio model info
+  if (lm && lm.online && lm.loaded.length) {
     const detail = (m) => {
       const parts = [];
       if (m.quant) parts.push(m.quant);
@@ -74,8 +75,24 @@ function renderHost(host, lm) {
       .map((x) => `${x.name}${detail(x)}${x.context ? `, running ctx ${x.context}` : ""}`)
       .join("\n");
   } else {
-    hostModelEl.textContent = lm.online ? "none loaded" : "LM Studio offline";
+    hostModelEl.textContent = lm ? (lm.online ? "none loaded" : "LM Studio offline") : "—";
     hostModelEl.title = "";
+  }
+  // LMS status badge (overrides text when loaded)
+  if (lms && lms.loaded.length) {
+    const m = lms.loaded[0];
+    const statusCls = ["idle", "processingPrompt"].includes(m.status) ? "ok" : m.status === "loading" ? "warn" : m.status === "unloading" ? "hot" : "ok";
+    const ttlHtml = m.ttl_remaining ? ` · ttl ${m.ttl_remaining}` : "";
+    const badge = `<span class="${statusCls}" style="font-size:11px;margin-left:8px">${m.status.toUpperCase()}</span>${ttlHtml}`;
+    const detail = (md) => {
+      const parts = [];
+      if (md.quant) parts.push(md.quant);
+      if (md.size_gb) parts.push(md.size_gb + " GB");
+      if (md.context) parts.push("ctx " + fmtCtx(md.context));
+      return parts.length ? ` (${parts.join(" · ")})` : "";
+    };
+    hostModelEl.innerHTML = m.name + detail(m) + badge;
+    hostModelEl.title = `parallel ${m.parallel} · ${m.device}`;
   }
 }
 
@@ -83,7 +100,7 @@ function renderHost(host, lm) {
 function renderCards(data) {
   statusEl.style.display = "none";
   metaEl.textContent = `driver ${data.driver_version}`;
-  dotEl.style.background = "var(--green)";
+  dotEl.classList.remove("offline");
   renderHost(data.host, data.lmstudio);
   const names = [...new Set(data.gpus.map((g) => g.name.replace("NVIDIA GeForce ", "")))];
   footGpusEl.textContent = `${data.gpus.length} \u00d7 ${names.join(" + ")}`;
@@ -181,8 +198,12 @@ async function tick() {
   try {
     const data = await fetchJSON("/api/gpus");
     if (data.gpus.length) renderCards(data);
+    renderHost(data.host, data.lmstudio, data.lms);
+    renderModels(data.lms);
+    dotEl.classList.remove("offline");
+    metaEl.textContent = data.driver_version || "";
   } catch (e) {
-    dotEl.style.background = "var(--red)";
+    dotEl.classList.add("offline");
     metaEl.textContent = "connection lost — retrying…";
   }
 }
@@ -192,6 +213,39 @@ async function tickHistory() {
     const hist = await fetchJSON("/api/history?minutes=5");
     if (hist.t.length > 1) updateCharts(hist);
   } catch (e) { /* transient; next tick retries */ }
+}
+
+// ---------- models panel ----------
+function renderModels(lms) {
+  if (!lms || !lms.loaded.length) return;
+  modelsEl.style.display = "block";
+  if (!modelsEl.querySelector("table")) {
+    modelsEl.innerHTML = `<table>
+      <thead><tr><th>MODEL</th><th>STATUS</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
+      <tbody id="models-tbody"></tbody>
+    </table>`;
+  }
+  const tbody = modelsEl.querySelector("#models-tbody");
+  const fmtSize = (b) => b >= 1024**3 ? (b / 1024**3).toFixed(1) + " GB" : (b / 1024**2).toFixed(0) + " MB";
+  const fmtCtx = (n) => n >= 1000 ? (n / 1000).toFixed(0) + "k" : String(n);
+  const sorted = [...lms.loaded].sort((a, b) => {
+    const order = { loaded: 0, loading: 1, processingPrompt: 0, idle: 2, unloading: 3 };
+    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
+  });
+  tbody.innerHTML = sorted.map((m) => {
+    const s = m.status || "";
+    const cls = ["loaded", "loading", "processingPrompt"].includes(s) ? "loaded" : s === "unloading" ? "unloading" : "idle";
+    const ttl = m.ttl_remaining || "";
+    const badgeLabel = ["loaded", "loading", "idle", "unloading"].includes(s) ? s : s === "processingPrompt" ? "loaded" : s;
+    return `<tr>
+      <td>${m.name}</td>
+      <td><span class="badge ${cls}">${badgeLabel}</span></td>
+      <td class="size">${fmtSize(m.sizeBytes)}</td>
+      <td>${m.quant || "—"}</td>
+      <td>${m.context ? fmtCtx(m.context) : "—"}</td>
+      <td>${ttl || "—"}</td>
+    </tr>`;
+  }).join("");
 }
 
 tick();

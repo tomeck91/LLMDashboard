@@ -6,6 +6,7 @@ rolling in-memory history (5 minutes). The frontend polls two endpoints:
   GET /api/history   -> time series for the charts
 """
 import json
+import subprocess
 import threading
 import time
 import urllib.request
@@ -20,11 +21,83 @@ SAMPLE_INTERVAL = 1.0     # seconds between samples
 HISTORY_SECONDS = 300     # keep last 5 minutes
 LMSTUDIO_URL = "http://127.0.0.1:1234/api/v1/models"
 LMSTUDIO_POLL_INTERVAL = 5.0  # model load/unload changes rarely; 5 s is plenty
+LMS_POLL_INTERVAL = 10.0  # lms ps changes only on load/unload
+LMS_FIRST_POLL = 3.0  # first poll after 3 s so panel appears quickly
 
 
 def _to_str(v):
     """pynvml returns bytes on old versions, str on new ones."""
     return v.decode("utf-8") if isinstance(v, bytes) else str(v)
+
+
+class LmsPoller:
+    """Poll `lms ps --json` in background thread."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self.loaded: list[dict] = []
+        self._last_ps = -LMS_FIRST_POLL  # force first poll immediately
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def _run(self):
+        while True:
+            now = time.time()
+            try:
+                if now - self._last_ps >= LMS_POLL_INTERVAL:
+                    self._last_ps = now
+                    self._poll_ps()
+            except Exception as e:
+                print(f"LMS poll error: {e}")
+            time.sleep(2)  # lightweight sleep; re-check every 2 s
+
+    def _poll_ps(self):
+        """Run `lms ps --json` and parse loaded models."""
+        try:
+            r = subprocess.run(
+                ["lms", "ps", "--json"],
+                capture_output=True, text=True, timeout=5,
+            )
+            data = json.loads(r.stdout)
+            loaded = []
+            for m in data:
+                ttl = m.get("ttlMs")
+                loaded.append({
+                    "identifier": m.get("identifier"),
+                    "name": m.get("displayName"),
+                    "status": m.get("status"),  # idle|loading|loaded|unloading
+                    "size_gb": round(m.get("sizeBytes", 0) / 1024**3, 1),
+                    "context": m.get("maxContextLength"),
+                    "parallel": m.get("parallel"),
+                    "quant": m.get("quantization", {}).get("name"),
+                    "ttl_ms": ttl,
+                    "ttl_remaining": _format_ttl(ttl) if ttl else None,
+                    "device": "Local" if m.get("deviceIdentifier") is None else m.get("deviceIdentifier"),
+                    "sizeBytes": m.get("sizeBytes"),
+                    "maxContextLength": m.get("maxContextLength"),
+                    "quantization": m.get("quantization"),
+                    "modelKey": m.get("modelKey"),
+                    "publisher": m.get("publisher"),
+                })
+            with self._lock:
+                self.loaded = loaded
+        except Exception:
+            with self._lock:
+                self.loaded = []
+
+    def snapshot(self):
+        with self._lock:
+            return {"loaded": list(self.loaded)}
+
+
+def _format_ttl(ms):
+    """Format milliseconds TTL as 'MM:SS' countdown."""
+    if not ms:
+        return None
+    s = max(0, ms // 1000)
+    m = s // 60
+    sec = s % 60
+    return f"{m:02d}:{sec:02d}"
 
 
 class Sampler:
@@ -47,6 +120,7 @@ class Sampler:
         self.latest: dict | None = None
         self.lmstudio = {"online": False, "loaded": []}
         self._last_lm = 0.0
+        self.lms = LmsPoller()
         psutil.cpu_percent(interval=None)  # prime: first real value comes on next call
 
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -139,6 +213,7 @@ class Sampler:
                     "gpus": [self._read_gpu(i) for i in range(self.count)],
                     "host": self._host_stats(),
                     "lmstudio": self._lmstudio_stats(now),
+                    "lms": self.lms.snapshot(),
                 }
             except pynvml.NVMLError as e:
                 print(f"NVML error during sampling: {e}")

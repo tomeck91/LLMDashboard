@@ -17,6 +17,8 @@
     --cyan: #00f0ff;
     --violet: #b537f2;
     --acid: #f9f002;
+    --green: #22c55e;
+    --red: #ef4444;
     --gpu0: #ff2a6d;
     --gpu1: #00f0ff;
   }
@@ -50,6 +52,7 @@
     box-shadow: 0 1px 18px rgba(0, 240, 255, 0.10);
   }
   #live-dot { width: 9px; height: 15px; background: var(--pink); box-shadow: 0 0 10px var(--pink); animation: blink 1.2s steps(1) infinite; }
+  #live-dot.offline { animation: none; opacity: 0.3; }
   @keyframes blink { 50% { opacity: 0.25; } }
   header h1 {
     font-size: 15px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase;
@@ -136,6 +139,19 @@
   footer .right { margin-left: auto; }
 
   #status { padding: 40px; text-align: center; color: var(--muted); display: none; }
+
+  /* ---------- models panel ---------- */
+  #models { margin-top: 14px; }
+  #models table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  #models th { text-align: left; color: var(--muted); font-weight: 600; letter-spacing: 1px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  #models td { padding: 4px 8px; border-top: 1px solid rgba(107,115,148,0.25); }
+  #models tr:hover td { background: rgba(0, 240, 255, 0.03); }
+  #models .badge { font-size: 10px; padding: 1px 6px; border: 1px solid; }
+  #models .badge.idle { color: var(--acid); border-color: var(--acid); }
+  #models .badge.loading { color: var(--cyan); border-color: var(--cyan); }
+  #models .badge.loaded { color: var(--green); border-color: var(--green); }
+  #models .badge.unloading { color: var(--pink); border-color: var(--pink); }
+  #models .size { color: var(--muted); }
 </style>
 </head>
 <body>
@@ -154,6 +170,7 @@
   <div id="status">Waiting for first sample&hellip; (the backend needs ~1 s after start)</div>
   <section id="cards"></section>
   <section id="charts"></section>
+  <section id="models" style="display:none;"></section>
 </main>
 
 <footer>
@@ -163,6 +180,6 @@
   <span class="ver right">v0-stable</span>
 </footer>
 
-<script src="app.js"></script>
+<script src="app.js?v=2"></script>
 </body>
 </html>
