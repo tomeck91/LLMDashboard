@@ -207,7 +207,7 @@ def _format_ttl(ms):
     """Format milliseconds TTL as 'MM:SS' countdown."""
     if not ms:
         return None
-    s = max(0, ms // 1000)
+    s = int(max(0, ms) // 1000)
     m = s // 60
     sec = s % 60
     return f"{m:02d}:{sec:02d}"
@@ -326,15 +326,18 @@ class Sampler:
         raise RuntimeError("Sampler not yet initialized")
 
 
-# Module-level singleton (lazy init)
+# Module-level singleton (lazy init, thread-safe)
 _sampler: Sampler | None = None
+_sampler_lock = threading.Lock()
 
 
 def get_sampler() -> Sampler:
     """Return the singleton Sampler, creating it on first call."""
     global _sampler
     if _sampler is None:
-        _sampler = Sampler()
+        with _sampler_lock:
+            if _sampler is None:  # double-check
+                _sampler = Sampler()
     return _sampler
 
 
