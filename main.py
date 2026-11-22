@@ -6,6 +6,7 @@ rolling in-memory history (5 minutes). The frontend polls two endpoints:
   GET /api/history   -> time series for the charts
 """
 import json
+import os
 import subprocess
 import threading
 import time
@@ -15,6 +16,7 @@ from collections import deque
 import psutil
 import pynvml
 from fastapi import FastAPI
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
 SAMPLE_INTERVAL = 1.0     # seconds between samples
@@ -430,8 +432,46 @@ def api_history(minutes: int = 5):
     return sampler.history_payload(min(max(minutes, 1), 30))
 
 
-# Mount static files AFTER API routes so /static/* and / work correctly
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+# Route for / must come BEFORE static mounts (mounts act as catch-all routes)
+@app.get("/")
+async def serve_index():
+    """Serve index.html with injected version from git tags."""
+    html_path = os.path.join("static", "index.html")
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    tag = _git_tag()
+    html = html.replace("v0-stable", tag)
+    return HTMLResponse(content=html)
+
+# Serve static files (app.js, etc.) at root level
+app.mount("/", StaticFiles(directory="static", html=False), name="static_root")
+
+
+def _git_tag():
+    """Return the latest git tag, falling back to 'dev'."""
+    try:
+        result = subprocess.run(
+            ["git", "describe", "--tags", "--abbrev=0"],
+            capture_output=True, text=True, timeout=3, cwd="C:\\AI\\OpenCode\\GPUDashboard",
+        )
+        tag = result.stdout.strip() or None
+    except Exception:
+        tag = None
+    return tag or "dev"
+
+
+@app.get("/")
+async def serve_index():
+    """Serve index.html with injected version from git tags."""
+    html_path = os.path.join("static", "index.html")
+    with open(html_path, "r", encoding="utf-8") as f:
+        html = f.read()
+    tag = _git_tag()
+    print(f"[serve_index] tag={tag}, found v0-stable={'v0-stable' in html}")
+    html = html.replace("v0-stable", tag)
+    if "MARKER_42" not in html:
+        html += "<!-- MARKER_42 -->"
+    return HTMLResponse(content=html)
 
 
 @app.middleware("http")
