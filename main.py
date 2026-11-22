@@ -15,14 +15,11 @@ from collections import deque
 import psutil
 import pynvml
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 
 SAMPLE_INTERVAL = 1.0     # seconds between samples
 HISTORY_SECONDS = 300     # keep last 5 minutes
 LMSTUDIO_URL = "http://127.0.0.1:1234/api/v1/models"
-LMSTUDIO_POLL_INTERVAL = 5.0  # model load/unload changes rarely; 5 s is plenty
 LMS_POLL_INTERVAL = 10.0  # lms ps changes only on load/unload
 LMS_FIRST_POLL = 3.0  # first poll after 3 s so panel appears quickly
 
@@ -123,8 +120,6 @@ class LmStudioReader:
 
     def __init__(self):
         self._lock = threading.Lock()
-        self._cached: dict = {"online": False, "loaded": []}
-        self._last_http_poll = 0.0
         self._cli_reader = _LmsCliReader()
 
     def poll(self) -> dict:

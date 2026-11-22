@@ -205,16 +205,27 @@ function updateCharts(hist) {
     // Compute fixed Y range for metrics without a hard-coded range
     if (METRIC_RANGE[m.key] === null) {
       const allVals = chart.data.datasets.flatMap(d => d.data);
-      const lo = Math.min(...allVals);
-      const hi = Math.max(...allVals);
-      // Power: cap max at NVML power_limit_w, don't auto-scale beyond it
-      if (m.key === "power_w") {
-        chart.options.scales.y.suggestedMin = 0;
-        chart.options.scales.y.suggestedMax = maxPowerW;
+      if (allVals.length === 0) {
+        // No data yet — use sensible defaults
+        if (m.key === "power_w") {
+          chart.options.scales.y.suggestedMin = 0;
+          chart.options.scales.y.suggestedMax = maxPowerW;
+        } else {
+          chart.options.scales.y.suggestedMin = 0;
+          chart.options.scales.y.suggestedMax = 100;
+        }
       } else {
-        const pad = Math.max(0.5, (hi - lo) * 0.05); // 5% padding
-        chart.options.scales.y.suggestedMin = Math.max(0, +(lo - pad).toFixed(1));
-        chart.options.scales.y.suggestedMax = +(hi + pad).toFixed(1);
+        const lo = Math.min(...allVals);
+        const hi = Math.max(...allVals);
+        // Power: cap max at NVML power_limit_w, don't auto-scale beyond it
+        if (m.key === "power_w") {
+          chart.options.scales.y.suggestedMin = 0;
+          chart.options.scales.y.suggestedMax = maxPowerW;
+        } else {
+          const pad = Math.max(0.5, (hi - lo) * 0.05); // 5% padding
+          chart.options.scales.y.suggestedMin = Math.max(0, +(lo - pad).toFixed(1));
+          chart.options.scales.y.suggestedMax = +(hi + pad).toFixed(1);
+        }
       }
     } else {
       const [lo, hi] = METRIC_RANGE[m.key];
