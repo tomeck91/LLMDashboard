@@ -154,10 +154,6 @@ function ensureCharts() {
         responsive: true,
         maintainAspectRatio: false,
         interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: { labels: { color: "#b8a078", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
-          tooltip: { titleFont: { family: MONO, size: 10 }, bodyFont: { family: MONO, size: 10 } },
-        },
         scales: {
           x: {
             ticks: { color: "#8a7a52", maxTicksLimit: 6, autoSkip: true, font: { family: MONO, size: 10 } },
@@ -170,10 +166,23 @@ function ensureCharts() {
             border: { color: "rgba(255, 170, 34, 0.25)" },
           },
         },
+        plugins: {
+          legend: { labels: { color: "#b8a078", boxWidth: 10, boxHeight: 10, font: { family: MONO, size: 10 } } },
+          tooltip: { titleFont: { family: MONO, size: 10 }, bodyFont: { family: MONO, size: 10 } },
+        },
       },
     });
   }
 }
+
+// Per-metric fixed Y range: [min, max] — avoids auto-scale jitter
+const METRIC_RANGE = {
+  util_gpu:   [0, 105],
+  util_mem:   [0, 105],
+  mem_used_mib: null,    // computed from data once
+  temp_c:     [0, 100],
+  power_w:    null,       // computed from data once
+};
 
 function updateCharts(hist) {
   ensureCharts();
@@ -190,6 +199,21 @@ function updateCharts(hist) {
       borderWidth: 1.5,
       tension: 0,
     }));
+
+    // Compute fixed Y range for metrics without a hard-coded range
+    if (METRIC_RANGE[m.key] === null) {
+      const allVals = hist.gpus.flatMap((g) => g[m.key]);
+      const lo = Math.min(...allVals);
+      const hi = Math.max(...allVals);
+      const pad = Math.max(2, (hi - lo) * 0.05); // 5% padding
+      chart.options.scales.y.suggestedMin = Math.max(0, lo - pad);
+      chart.options.scales.y.suggestedMax = hi + pad;
+    } else {
+      const [lo, hi] = METRIC_RANGE[m.key];
+      chart.options.scales.y.suggestedMin = lo;
+      chart.options.scales.y.suggestedMax = hi;
+    }
+
     chart.update("none");
   }
 }
