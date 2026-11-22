@@ -106,7 +106,7 @@ function renderCards(data) {
   footGpusEl.textContent = `${data.gpus.length} \u00d7 ${names.join(" + ")}`;
 
   cardsEl.innerHTML = data.gpus.map((g, i) => {
-    const color = GPU_COLORS[i % GPU_COLORS.length];
+    const color = "#00f0ff"; // neutral cyan for all bars
     const memPct = g.mem_total_mib ? (g.mem_used_mib / g.mem_total_mib) * 100 : 0;
     const tempCls = g.temp_c >= 80 ? "hot" : g.temp_c >= 70 ? "warn" : "";
     const procTip = g.procs.map((p) => `${p.name} (PID ${p.pid})`).join(", ");
@@ -120,12 +120,14 @@ function renderCards(data) {
         </div>
         <div class="row"><span class="lbl">VRAM</span><span class="dots"></span><b>${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB (${memPct.toFixed(0)}%)</b></div>
         ${seg(memPct, 24, color)}
+        <div class="row"><span class="lbl">POWER</span><span class="dots"></span><b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
+        ${seg(Math.min(100, (g.power_w / (g.power_limit_w || 1)) * 100), 24, levelColor(g.power_w / (g.power_limit_w || 1) * 100))}
         <div class="row proc-row" title="${procTip}"><span class="lbl">PROC</span><span class="dots"></span><b>${procText}</b></div>
         <div class="stats-grid">
           <div class="row"><span class="lbl">TEMP</span><span class="dots"></span><b class="${tempCls}">${g.temp_c}&deg;C</b></div>
-          <div class="row"><span class="lbl">POWER</span><span class="dots"></span><b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
-          <div class="row"><span class="lbl">CLOCK</span><span class="dots"></span><b>${g.clock_graphics_mhz} MHz</b></div>
+          <div class="row"><span class="lbl">CORE</span><span class="dots"></span><b>${g.clock_graphics_mhz} MHz</b></div>
           <div class="row"><span class="lbl">FAN</span><span class="dots"></span><b>${g.fan_pct == null ? "N/A" : g.fan_pct + "%"}</b></div>
+          <div class="row"><span class="lbl">MEM</span><span class="dots"></span><b>${g.clock_memory_mhz} MHz</b></div>
         </div>
       </div>`;
   }).join("");
