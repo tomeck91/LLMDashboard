@@ -235,25 +235,31 @@ function renderModels(lm) {
   modelsEl.style.display = "block";
   if (!modelsEl.querySelector("table")) {
     modelsEl.innerHTML = `<table>
-      <thead><tr><th>MODEL</th><th>STATUS</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
+      <thead><tr><th>MODEL</th><th>STATUS</th><th>GEN</th><th>READ</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
       <tbody id="models-tbody"></tbody>
     </table>`;
   }
   const tbody = modelsEl.querySelector("#models-tbody");
   const fmtSize = (gb) => gb != null ? gb.toFixed(1) + " GB" : "—";
   const fmtCtx = (n) => n >= 1000 ? (n / 1000).toFixed(0) + "k" : String(n);
-  const sorted = [...lm.loaded].sort((a, b) => {
-    const order = { loaded: 0, loading: 1, processingPrompt: 0, idle: 2, unloading: 3 };
-    return (order[a.status] ?? 2) - (order[b.status] ?? 2);
-  });
+  const order = { generating: 0, processingPrompt: 0, loaded: 0, loading: 1, idle: 2, unloading: 3 };
+  const sorted = [...lm.loaded].sort((a, b) => (order[a.status] ?? 2) - (order[b.status] ?? 2));
+  const BADGE = { generating: "loaded", processingPrompt: "loaded", loaded: "loaded", loading: "loading", unloading: "unloading" };
   tbody.innerHTML = sorted.map((m) => {
     const s = m.status || "";
-    const cls = ["loaded", "loading", "processingPrompt"].includes(s) ? "loaded" : s === "unloading" ? "unloading" : "idle";
+    const cls = BADGE[s] || "idle";
+    const badgeLabel = s === "processingPrompt" ? "prompt" : s;
     const ttl = m.ttl_remaining || "";
-    const badgeLabel = ["loaded", "loading", "idle", "unloading"].includes(s) ? s : s === "processingPrompt" ? "loaded" : s;
+    // last finished request (from `lms log stream --stats`)
+    const st = m.stats;
+    const gen = st && st.gen_tps != null ? `${st.gen_tps.toFixed(1)} t/s` : "—";
+    const read = st && st.prompt_tokens != null ? `${fmtCtx(st.prompt_tokens)} tok · ${(st.ttft_s ?? 0).toFixed(2)}s` : "—";
+    const tip = st ? `last request ${fmtTime(st.t)}: ${st.gen_tokens} tokens generated in ${(st.total_s ?? 0).toFixed(1)}s; ${st.prompt_tokens} prompt tokens, first token after ${(st.ttft_s ?? 0).toFixed(2)}s` : "no finished request seen yet";
     return `<tr>
       <td>${m.name}</td>
       <td><span class="badge ${cls}">${badgeLabel}</span></td>
+      <td class="gen" title="${tip}">${gen}</td>
+      <td class="size" title="${tip}">${read}</td>
       <td class="size">${fmtSize(m.size_gb)}</td>
       <td>${m.quant || "—"}</td>
       <td>${m.context ? fmtCtx(m.context) : "—"}</td>

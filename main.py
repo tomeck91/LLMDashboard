@@ -123,16 +123,20 @@ class LmStudioReader:
     """
 
     def __init__(self):
-        self._lock = threading.Lock()
         self._cli_reader = _LmsCliReader()
+        self._stats_reader = _LmsStatsReader()
 
     def poll(self) -> dict:
-        """Return merged model data from both sources."""
+        """Return merged model data from both sources, plus last-request stats."""
         http_data = _poll_http_raw()
         cli_data = self._cli_reader.poll()
+        models = _merge_models(http_data.get("loaded", []), cli_data.get("loaded", []))
+        stats = self._stats_reader.poll()
+        for m in models:
+            m["stats"] = stats.get(m.get("id"))
         return {
             "online": http_data["online"] or bool(cli_data.get("loaded")),
-            "loaded": _merge_models(http_data.get("loaded", []), cli_data.get("loaded", [])),
+            "loaded": models,
         }
 
 
@@ -148,6 +152,7 @@ def _poll_http_raw() -> dict:
                 size = m.get("size_bytes")
                 config = (inst.get("config") or {})
                 loaded.append({
+                    "id": inst.get("id") or m.get("key"),
                     "name": m.get("display_name") or m.get("key"),
                     "quant": q.get("name"),
                     "context": config.get("context_length"),
@@ -192,6 +197,7 @@ class _LmsCliReader:
             for m in data:
                 ttl = m.get("ttlMs")
                 loaded.append({
+                    "id": m.get("identifier"),
                     "name": m.get("displayName"),
                     "status": m.get("status"),  # idle|loading|loaded|unloading
                     "size_gb": round(m.get("sizeBytes", 0) / 1024**3, 1),
@@ -213,6 +219,65 @@ class _LmsCliReader:
             return {"loaded": list(self.loaded)}
 
 
+def _parse_stats_line(line: str):
+    """Parse one `lms log stream --stats --json` line.
+
+    Returns (model_id, stats_dict) for a finished prediction, else None.
+    Lines also carry the full prompt/output text; only the stats are kept.
+    """
+    if '"stats"' not in line:  # cheap pre-filter: most lines are input echoes
+        return None
+    try:
+        data = json.loads(line).get("data") or {}
+    except ValueError:
+        return None
+    s = data.get("stats")
+    model_id = data.get("modelIdentifier")
+    if not s or not model_id:
+        return None
+    return model_id, {
+        "gen_tps": s.get("tokensPerSecond"),
+        "ttft_s": s.get("timeToFirstTokenSec"),
+        "prompt_tokens": s.get("promptTokensCount"),
+        "gen_tokens": s.get("predictedTokensCount"),
+        "total_s": s.get("totalTimeSec"),
+        "t": time.time(),
+    }
+
+
+class _LmsStatsReader:
+    """Internal: keeps `lms log stream -s model --stats --json` running and
+    remembers the stats of the last finished request per model identifier."""
+
+    def __init__(self):
+        self._lock = threading.Lock()
+        self._stats: dict[str, dict] = {}
+        threading.Thread(target=self._run, daemon=True).start()
+
+    def _run(self):
+        while True:
+            try:
+                proc = subprocess.Popen(
+                    ["lms", "log", "stream", "-s", "model", "--stats", "--json"],
+                    stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                    text=True, encoding="utf-8", errors="replace",
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+                for line in proc.stdout:
+                    parsed = _parse_stats_line(line)
+                    if parsed:
+                        with self._lock:
+                            self._stats[parsed[0]] = parsed[1]
+                proc.wait()
+            except Exception as e:
+                print(f"LMS log stream error: {e}")
+            time.sleep(5)  # stream ended (LM Studio closed?) — retry
+
+    def poll(self) -> dict:
+        with self._lock:
+            return dict(self._stats)
+
+
 def _merge_models(http_models: list[dict], cli_models: list[dict]) -> list[dict]:
     """Merge HTTP API + CLI model data into a single unified shape.
 
@@ -230,6 +295,7 @@ def _merge_models(http_models: list[dict], cli_models: list[dict]) -> list[dict]
     for m in http_models:
         name = m.get("name") or "unknown"
         merged[name] = {
+            "id": m.get("id"),
             "name": name,
             "quant": m.get("quant"),
             "size_gb": m.get("size_gb"),
@@ -245,6 +311,8 @@ def _merge_models(http_models: list[dict], cli_models: list[dict]) -> list[dict]
         if name in merged:
             # Merge into existing HTTP entry — CLI provides runtime fields
             entry = merged[name]
+            if not entry["id"] and m.get("id"):
+                entry["id"] = m["id"]
             if not entry["quant"] and m.get("quant"):
                 entry["quant"] = m["quant"]
             if not entry["size_gb"] and m.get("size_gb"):
@@ -263,6 +331,7 @@ def _merge_models(http_models: list[dict], cli_models: list[dict]) -> list[dict]
         else:
             # CLI-only model (not in HTTP API)
             merged[name] = {
+                "id": m.get("id"),
                 "name": name,
                 "quant": m.get("quant"),
                 "size_gb": m.get("size_gb"),

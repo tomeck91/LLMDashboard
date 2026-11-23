@@ -1,6 +1,6 @@
 """Unit tests for GPUDashboard main module."""
 import pytest
-from main import NvmlReader, PsutilReader, LmStudioReader, _merge_models
+from main import NvmlReader, PsutilReader, LmStudioReader, _merge_models, _parse_stats_line
 
 
 class TestNvmlReader:
@@ -142,3 +142,33 @@ class TestMergeModels:
         # model-c: CLI only
         c = next(m for m in result if m["name"] == "model-c")
         assert c["status"] == "loading"
+
+
+class TestParseStatsLine:
+    """Tests for parsing `lms log stream --stats --json` lines."""
+
+    def test_output_line_with_stats(self):
+        line = ('{"timestamp":1,"data":{"type":"llm.prediction.output","output":"hi",'
+                '"stats":{"tokensPerSecond":55.7,"timeToFirstTokenSec":0.64,"totalTimeSec":198.7,'
+                '"promptTokensCount":23964,"predictedTokensCount":11034},'
+                '"modelIdentifier":"qwen/qwen3.8-27b"}}')
+        model_id, s = _parse_stats_line(line)
+        assert model_id == "qwen/qwen3.8-27b"
+        assert s["gen_tps"] == 55.7
+        assert s["ttft_s"] == 0.64
+        assert s["prompt_tokens"] == 23964
+        assert s["gen_tokens"] == 11034
+
+    def test_input_line_ignored(self):
+        line = '{"timestamp":1,"data":{"type":"llm.prediction.input","input":"hello"}}'
+        assert _parse_stats_line(line) is None
+
+    def test_garbage_ignored(self):
+        assert _parse_stats_line('Streaming logs "stats" from LM Studio') is None
+        assert _parse_stats_line("") is None
+
+    def test_merge_keeps_id(self):
+        http = [{"id": "qwen/qwen3.8-27b", "name": "Qwen3.8 27B"}]
+        cli = [{"id": "qwen/qwen3.8-27b", "name": "Qwen3.8 27B", "status": "idle"}]
+        assert _merge_models(http, cli)[0]["id"] == "qwen/qwen3.8-27b"
+        assert _merge_models([], cli)[0]["id"] == "qwen/qwen3.8-27b"
