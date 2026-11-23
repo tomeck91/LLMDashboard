@@ -231,8 +231,6 @@ async function tickHistory() {
 
 // ---------- models panel ----------
 function renderModels(lm) {
-  if (!lm || !lm.loaded.length) { modelsEl.style.display = "none"; return; }
-  modelsEl.style.display = "block";
   if (!modelsEl.querySelector("table")) {
     modelsEl.innerHTML = `<table>
       <thead><tr><th>MODEL</th><th>STATUS</th><th>GEN</th><th>READ</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
@@ -240,6 +238,11 @@ function renderModels(lm) {
     </table>`;
   }
   const tbody = modelsEl.querySelector("#models-tbody");
+  if (!lm || !lm.loaded.length) {
+    const msg = lm && lm.online ? "no model loaded" : "LM Studio offline";
+    tbody.innerHTML = `<tr><td colspan="8" class="size">${msg}</td></tr>`;
+    return;
+  }
   const fmtSize = (gb) => gb != null ? gb.toFixed(1) + " GB" : "—";
   const fmtCtx = (n) => n >= 1000 ? (n / 1000).toFixed(0) + "k" : String(n);
   const order = { generating: 0, processingPrompt: 0, loaded: 0, loading: 1, idle: 2, unloading: 3 };
