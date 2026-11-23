@@ -256,13 +256,13 @@ function renderModels(lm) {
     // last finished request (from `lms log stream --stats`)
     const st = m.stats;
     const gen = st && st.gen_tps != null ? `${st.gen_tps.toFixed(1)} t/s` : "—";
-    const read = st && st.prompt_tokens != null ? `${fmtCtx(st.prompt_tokens)} tok · ${(st.ttft_s ?? 0).toFixed(2)}s` : "—";
-    const tip = st ? `last request ${fmtTime(st.t)}: ${st.gen_tokens} tokens generated in ${(st.total_s ?? 0).toFixed(1)}s; ${st.prompt_tokens} prompt tokens, first token after ${(st.ttft_s ?? 0).toFixed(2)}s` : "no finished request seen yet";
+    const read = st && st.read_tps != null ? `${st.read_tps.toFixed(0)} t/s` : "—";
+    const tip = st ? `last request ${fmtTime(st.t)}: read ${st.prompt_tokens} prompt tokens, generated ${st.gen_tokens} tokens (prompt-cache hits make READ look higher)` : "no finished request seen yet";
     return `<tr>
       <td>${m.name}</td>
       <td><span class="badge ${cls}">${badgeLabel}</span></td>
       <td class="gen" title="${tip}">${gen}</td>
-      <td class="size" title="${tip}">${read}</td>
+      <td class="gen" title="${tip}">${read}</td>
       <td class="size">${fmtSize(m.size_gb)}</td>
       <td>${m.quant || "—"}</td>
       <td>${m.context ? fmtCtx(m.context) : "—"}</td>

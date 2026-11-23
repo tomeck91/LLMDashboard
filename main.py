@@ -235,10 +235,15 @@ def _parse_stats_line(line: str):
     model_id = data.get("modelIdentifier")
     if not s or not model_id:
         return None
+    ttft = s.get("timeToFirstTokenSec")
+    prompt = s.get("promptTokensCount")
     return model_id, {
         "gen_tps": s.get("tokensPerSecond"),
-        "ttft_s": s.get("timeToFirstTokenSec"),
-        "prompt_tokens": s.get("promptTokensCount"),
+        # prompt processing speed: prompt tokens / time to first token.
+        # LM Studio reports no cached-token count, so a prompt-cache hit inflates it.
+        "read_tps": prompt / ttft if prompt and ttft else None,
+        "ttft_s": ttft,
+        "prompt_tokens": prompt,
         "gen_tokens": s.get("predictedTokensCount"),
         "total_s": s.get("totalTimeSec"),
         "t": time.time(),

@@ -158,6 +158,12 @@ class TestParseStatsLine:
         assert s["ttft_s"] == 0.64
         assert s["prompt_tokens"] == 23964
         assert s["gen_tokens"] == 11034
+        assert round(s["read_tps"]) == round(23964 / 0.64)
+
+    def test_read_tps_none_without_ttft(self):
+        line = ('{"data":{"stats":{"tokensPerSecond":50,"promptTokensCount":100,'
+                '"timeToFirstTokenSec":0},"modelIdentifier":"m"}}')
+        assert _parse_stats_line(line)[1]["read_tps"] is None
 
     def test_input_line_ignored(self):
         line = '{"timestamp":1,"data":{"type":"llm.prediction.input","input":"hello"}}'
