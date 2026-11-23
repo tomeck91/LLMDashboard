@@ -47,7 +47,7 @@ function seg(pct, cells = 24, color = "currentColor") {
 }
 
 // ---------- host (header) ----------
-function renderHost(host, lm) {
+function renderHost(host) {
   if (!host) return;
   hostCpuEl.textContent = `${Math.round(host.cpu_pct)}%`;
   hostRamEl.textContent = `${host.ram_used_gb.toFixed(1)}/${host.ram_total_gb.toFixed(0)} GB (${Math.round(host.ram_pct)}%)`;
@@ -63,8 +63,6 @@ function renderHost(host, lm) {
 function renderCards(data) {
   statusEl.style.display = "none";
   metaEl.textContent = `driver ${data.driver_version}`;
-  dotEl.classList.remove("offline");
-  renderHost(data.host, data.lmstudio);
   // Track max NVML power limit for chart Y-axis
   maxPowerW = Math.max(...data.gpus.map(g => g.power_limit_w || 0), 350);
   const names = [...new Set(data.gpus.map((g) => g.name.replace("NVIDIA GeForce ", "")))];
@@ -215,11 +213,11 @@ async function tick() {
   clockEl.textContent = new Date().toLocaleTimeString([], { hour12: false });
   try {
     const data = await fetchJSON("/api/gpus");
-    if (data.gpus.length) renderCards(data);
-    renderHost(data.host, data.lmstudio);
-    renderModels(data.lmstudio);
     dotEl.classList.remove("offline");
-    metaEl.textContent = data.driver_version || "";
+    if (data.gpus.length) renderCards(data);           // sets "driver X" meta
+    else metaEl.textContent = data.driver_version || ""; // "initializing..." or init error
+    renderHost(data.host);
+    renderModels(data.lmstudio);
   } catch (e) {
     dotEl.classList.add("offline");
     metaEl.textContent = "connection lost — retrying…";
@@ -235,7 +233,7 @@ async function tickHistory() {
 
 // ---------- models panel ----------
 function renderModels(lm) {
-  if (!lm || !lm.loaded.length) return;
+  if (!lm || !lm.loaded.length) { modelsEl.style.display = "none"; return; }
   modelsEl.style.display = "block";
   if (!modelsEl.querySelector("table")) {
     modelsEl.innerHTML = `<table>

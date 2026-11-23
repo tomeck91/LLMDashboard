@@ -6,7 +6,6 @@ rolling in-memory history (5 minutes). The frontend polls two endpoints:
   GET /api/history   -> time series for the charts
 """
 import json
-import os
 import subprocess
 import threading
 import time
@@ -25,7 +24,8 @@ HISTORY_SECONDS = 300     # keep last 5 minutes
 LMSTUDIO_URL = "http://127.0.0.1:1234/api/v1/models"
 LMS_POLL_INTERVAL = 10.0  # lms ps changes only on load/unload
 LMS_FIRST_POLL = 3.0      # first poll after 3 s so panel appears quickly
-_PROJECT_ROOT = Path(__file__).resolve().parent.parent  # git repo root
+_PROJECT_ROOT = Path(__file__).resolve().parent  # git repo root (main.py lives at the top)
+STATIC_DIR = _PROJECT_ROOT / "static"
 
 
 def _to_str(v):
@@ -300,6 +300,7 @@ class Sampler:
         # Configuration only — no NVML init, no threads (lazy init)
         self.history: deque[dict] = deque(maxlen=HISTORY_SECONDS)
         self._latest: dict | None = None
+        self.error: str | None = None  # set if the sampler thread fails to start
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
 
@@ -335,8 +336,12 @@ class Sampler:
         """Return time series for charts."""
         # Ensure sampler is running before accessing properties
         self._ensure_started()
-        n = min(int(minutes * 60), len(self.history))
-        samples = list(self.history)[-n:] if n else []
+        if not hasattr(self, "_gpu_reader"):  # not initialized yet (or init failed)
+            return {"interval_s": SAMPLE_INTERVAL, "t": [], "gpus": []}
+        with self._lock:
+            samples = list(self.history)
+        n = min(int(minutes * 60), len(samples))
+        samples = samples[-n:] if n else []
         gpus = [
             {
                 "index": i,
@@ -352,10 +357,19 @@ class Sampler:
 
     def _run(self):
         """Background loop: poll all sources every SAMPLE_INTERVAL seconds."""
-        # Initialize readers (NVML, psutil, HTTP+CLI)
-        self._gpu_reader = NvmlReader()
-        self._host_reader = PsutilReader()
-        self._lmstudio_reader = LmStudioReader()
+        # Initialize readers (NVML, psutil, HTTP+CLI). _gpu_reader is assigned
+        # last so hasattr(self, "_gpu_reader") means "all readers ready".
+        try:
+            host_reader = PsutilReader()
+            lmstudio_reader = LmStudioReader()
+            gpu_reader = NvmlReader()
+        except Exception as e:
+            self.error = f"sampler init failed: {e}"
+            print(self.error)
+            return
+        self._host_reader = host_reader
+        self._lmstudio_reader = lmstudio_reader
+        self._gpu_reader = gpu_reader
 
         while True:
             try:
@@ -366,8 +380,8 @@ class Sampler:
                     "host": self._host_reader.poll(),
                     "lmstudio": self._lmstudio_reader.poll(),
                 }
-            except pynvml.NVMLError as e:
-                print(f"NVML error during sampling: {e}")
+            except Exception as e:  # keep the thread alive on any transient error
+                print(f"Sampling error: {e}")
                 time.sleep(SAMPLE_INTERVAL)
                 continue
             with self._lock:
@@ -422,7 +436,7 @@ def api_gpus():
     try:
         driver = sampler.driver_version
     except RuntimeError:
-        driver = "initializing..."
+        driver = sampler.error or "initializing..."
     return {**snap, "driver_version": driver}
 
 
@@ -443,15 +457,13 @@ def health_check():
 @app.get("/")
 async def serve_index():
     """Serve index.html with injected version from git tags."""
-    html_path = os.path.join("static", "index.html")
-    with open(html_path, "r", encoding="utf-8") as f:
-        html = f.read()
+    html = (STATIC_DIR / "index.html").read_text(encoding="utf-8")
     tag = _git_tag()
     html = html.replace("v0-stable", tag)
     return HTMLResponse(content=html)
 
 # Serve static files (app.js, etc.) at root level
-app.mount("/", StaticFiles(directory="static", html=False), name="static_root")
+app.mount("/", StaticFiles(directory=STATIC_DIR, html=False), name="static_root")
 
 
 def _git_tag():
@@ -470,7 +482,8 @@ def _git_tag():
 @app.middleware("http")
 async def add_no_cache(request, call_next):
     response = await call_next(request)
-    if request.url.path.startswith("/static/") or request.url.path == "/":
+    # Static files are mounted at "/" (e.g. /app.js), so cover everything except the API
+    if not request.url.path.startswith("/api/"):
         response.headers["Cache-Control"] = "no-cache"
     return response
 
