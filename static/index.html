@@ -139,7 +139,7 @@
   #status { padding: 40px; text-align: center; color: var(--muted); display: none; }
 
   /* ---------- models panel ---------- */
-  #models { margin-top: 14px; }
+  #models { margin-bottom: 14px; }
   #models table { width: 100%; border-collapse: collapse; font-size: 12px; }
   #models th { text-align: left; color: var(--muted); font-weight: 600; letter-spacing: 1px; padding: 4px 8px; border-bottom: 1px solid var(--border); }
   #models td { padding: 4px 8px; border-top: 1px solid var(--border); }
@@ -165,9 +165,9 @@
 
 <main>
   <div id="status">Waiting for first sample&hellip; (the backend needs ~1 s after start)</div>
+  <section id="models" style="display:none;"></section>
   <section id="cards"></section>
   <section id="charts"></section>
-  <section id="models" style="display:none;"></section>
 </main>
 
 <footer>
