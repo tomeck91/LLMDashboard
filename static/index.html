@@ -93,6 +93,8 @@
   .util-line { display: flex; align-items: center; gap: 8px; }
   .util-line label { width: 38px; font-size: 12px; color: var(--muted); letter-spacing: 1px; }
   .util-line b { width: 46px; text-align: right; font-size: 14px; font-weight: 700; }
+  /* VRAM/POWER carry longer detail text than the short % values above */
+  .util-line.detail b { width: auto; margin-left: auto; font-size: 12px; font-weight: 600; color: #fff; white-space: nowrap; }
 
   /* segmented bar (neon blocks) */
   .seg { display: flex; gap: 2px; flex: 1; height: 12px; }
