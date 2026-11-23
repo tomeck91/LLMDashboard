@@ -80,7 +80,7 @@ function renderCards(data) {
         <div class="util-grid">
           <div class="util-line"><label>GPU</label>${seg(g.util_gpu, 24, levelColor(g.util_gpu))}<b style="color:${levelColor(g.util_gpu)}">${g.util_gpu}%</b></div>
           <div class="util-line"><label>MEM</label>${seg(g.util_mem, 24, levelColor(g.util_mem))}<b style="color:${levelColor(g.util_mem)}">${g.util_mem}%</b></div>
-          <div class="util-line detail"><label>VRAM</label>${seg(memPct, 24, color)}<b>${(g.mem_used_mib / 1024).toFixed(1)} / ${(g.mem_total_mib / 1024).toFixed(0)} GB (${memPct.toFixed(0)}%)</b></div>
+          <div class="util-line detail"><label>VRAM</label>${seg(memPct, 24, color)}<b>${(g.mem_used_mib / 1024).toFixed(1)} GB (${memPct.toFixed(0)}%)</b></div>
           <div class="util-line detail"><label>POWER</label>${seg(Math.min(100, (g.power_w / (g.power_limit_w || 1)) * 100), 24, levelColor(g.power_w / (g.power_limit_w || 1) * 100))}<b>${g.power_limit_w ? `${Math.round(g.power_w)}/${g.power_limit_w} W` : g.power_w + " W"}</b></div>
         </div>
         <div class="row proc-row" title="${procTip}"><span class="lbl">PROC</span><span class="dots"></span><b>${procText}</b></div>
