@@ -18,7 +18,6 @@ const uptimeEl = document.getElementById("uptime");
 const footGpusEl = document.getElementById("foot-gpus");
 const hostCpuEl = document.getElementById("host-cpu");
 const hostRamEl = document.getElementById("host-ram");
-const hostModelEl = document.getElementById("host-model");
 
 let charts = {}; // metric key -> Chart instance
 
@@ -57,39 +56,6 @@ function renderHost(host, lm) {
     const d = Math.floor(up / 86400);
     const hms = new Date(up * 1000).toISOString().slice(11, 19);
     uptimeEl.textContent = `up ${d > 0 ? d + "d " : ""}${hms}`;
-  }
-  const fmtCtx = (n) => (n >= 1000 ? Math.round(n / 1000) + "k" : String(n));
-  // Unified LM Studio model info (merged HTTP + CLI)
-  if (lm && lm.online && lm.loaded.length) {
-    const detail = (m) => {
-      const parts = [];
-      if (m.quant) parts.push(m.quant);
-      if (m.size_gb) parts.push(m.size_gb + " GB");
-      if (m.context) parts.push("ctx " + fmtCtx(m.context));
-      return parts.length ? ` (${parts.join(" · ")})` : "";
-    };
-    const m = lm.loaded[0];
-    const extra = lm.loaded.length > 1 ? ` +${lm.loaded.length - 1} more` : "";
-    // Status badge + TTL from CLI runtime data
-    let badgeHtml = "";
-    if (m.status) {
-      const statusCls = ["idle", "processingPrompt"].includes(m.status) ? "ok" : m.status === "loading" ? "warn" : m.status === "unloading" ? "hot" : "ok";
-      const ttlHtml = m.ttl_remaining ? ` · ttl ${m.ttl_remaining}` : "";
-      badgeHtml = `<span class="${statusCls}" style="font-size:11px;margin-left:8px">${m.status.toUpperCase()}</span>${ttlHtml}`;
-    }
-    hostModelEl.innerHTML = m.name + detail(m) + extra + badgeHtml;
-    // Tooltip shows all loaded models with details
-    hostModelEl.title = lm.loaded.map((x) => {
-      let s = `${x.name}${detail(x)}`;
-      if (x.status) s += ` [${x.status}]`;
-      if (x.ttl_remaining) s += ` · ttl ${x.ttl_remaining}`;
-      if (x.parallel) s += ` · parallel ${x.parallel}`;
-      if (x.device !== "Local") s += ` · ${x.device}`;
-      return s;
-    }).join("\n");
-  } else {
-    hostModelEl.textContent = lm ? (lm.online ? "none loaded" : "LM Studio offline") : "—";
-    hostModelEl.title = "";
   }
 }
 
