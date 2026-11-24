@@ -233,14 +233,14 @@ async function tickHistory() {
 function renderModels(lm) {
   if (!modelsEl.querySelector("table")) {
     modelsEl.innerHTML = `<table>
-      <thead><tr><th>MODEL</th><th>STATUS</th><th>GEN</th><th>READ</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
+      <thead><tr><th>MODEL</th><th>STATUS</th><th>GEN</th><th>SIZE</th><th>QUANT</th><th>CTX</th><th>TTL</th></tr></thead>
       <tbody id="models-tbody"></tbody>
     </table>`;
   }
   const tbody = modelsEl.querySelector("#models-tbody");
   if (!lm || !lm.loaded.length) {
     const msg = lm && lm.online ? "no model loaded" : "LM Studio offline";
-    tbody.innerHTML = `<tr><td colspan="8" class="size">${msg}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" class="size">${msg}</td></tr>`;
     return;
   }
   const fmtSize = (gb) => gb != null ? gb.toFixed(1) + " GB" : "—";
@@ -256,14 +256,11 @@ function renderModels(lm) {
     // last finished request (from `lms log stream --stats`)
     const st = m.stats;
     const gen = st && st.gen_tps != null ? `${st.gen_tps.toFixed(1)} t/s` : "—";
-    const read = st && st.read_tps != null ? `${st.read_tps.toFixed(0)} t/s` : "—";
-    const tip = st ? `last request ${fmtTime(st.t)}: read ${st.prompt_tokens} prompt tokens, generated ${st.gen_tokens} tokens (prompt-cache hits make READ look higher)` : "no finished request seen yet";
+    const tip = st ? `last request ${fmtTime(st.t)}: prompt ${st.prompt_tokens} tokens, generated ${st.gen_tokens} tokens in ${(st.total_s ?? 0).toFixed(1)}s` : "no finished request seen yet";
     return `<tr>
       <td>${m.name}</td>
       <td><span class="badge ${cls}">${badgeLabel}</span></td>
-      <td class="gen" title="${tip}">${gen}</td>
-      <td class="gen" title="${tip}">${read}</td>
-      <td class="size">${fmtSize(m.size_gb)}</td>
+      <td class="gen" title="${tip}">${gen}</td>      <td class="size">${fmtSize(m.size_gb)}</td>
       <td>${m.quant || "—"}</td>
       <td>${m.context ? fmtCtx(m.context) : "—"}</td>
       <td>${ttl || "—"}</td>

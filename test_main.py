@@ -155,24 +155,20 @@ class TestParseStatsLine:
         model_id, s = _parse_stats_line(line)
         assert model_id == "qwen/qwen3.8-27b"
         assert s["gen_tps"] == 55.7
-        assert s["ttft_s"] == 0.64
         assert s["prompt_tokens"] == 23964
         assert s["gen_tokens"] == 11034
-        assert round(s["read_tps"]) == round(23964 / 0.64)
-
-    def test_read_tps_none_without_ttft(self):
-        line = ('{"data":{"stats":{"tokensPerSecond":50,"promptTokensCount":100,'
-                '"timeToFirstTokenSec":0},"modelIdentifier":"m"}}')
-        assert _parse_stats_line(line)[1]["read_tps"] is None
+        assert "read_tps" not in s
 
     def test_input_line_ignored(self):
-        line = '{"timestamp":1,"data":{"type":"llm.prediction.input","input":"hello"}}'
+        line = '{"data":{"type":"llm.prediction.input","input":"hello","modelIdentifier":"m"}}'
         assert _parse_stats_line(line) is None
 
     def test_garbage_ignored(self):
         assert _parse_stats_line('Streaming logs "stats" from LM Studio') is None
         assert _parse_stats_line("") is None
 
+
+class TestMergeIds:
     def test_merge_keeps_id(self):
         http = [{"id": "qwen/qwen3.8-27b", "name": "Qwen3.8 27B"}]
         cli = [{"id": "qwen/qwen3.8-27b", "name": "Qwen3.8 27B", "status": "idle"}]

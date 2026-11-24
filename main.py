@@ -220,12 +220,12 @@ class _LmsCliReader:
 
 
 def _parse_stats_line(line: str):
-    """Parse one `lms log stream --stats --json` line.
+    """Parse one `lms log stream -s model --stats --json` line.
 
     Returns (model_id, stats_dict) for a finished prediction, else None.
-    Lines also carry the full prompt/output text; only the stats are kept.
+    Only values LM Studio reports exactly are kept; prompt/output text is discarded.
     """
-    if '"stats"' not in line:  # cheap pre-filter: most lines are input echoes
+    if '"stats"' not in line:  # cheap pre-filter: input echoes carry no stats
         return None
     try:
         data = json.loads(line).get("data") or {}
@@ -235,15 +235,9 @@ def _parse_stats_line(line: str):
     model_id = data.get("modelIdentifier")
     if not s or not model_id:
         return None
-    ttft = s.get("timeToFirstTokenSec")
-    prompt = s.get("promptTokensCount")
     return model_id, {
         "gen_tps": s.get("tokensPerSecond"),
-        # prompt processing speed: prompt tokens / time to first token.
-        # LM Studio reports no cached-token count, so a prompt-cache hit inflates it.
-        "read_tps": prompt / ttft if prompt and ttft else None,
-        "ttft_s": ttft,
-        "prompt_tokens": prompt,
+        "prompt_tokens": s.get("promptTokensCount"),
         "gen_tokens": s.get("predictedTokensCount"),
         "total_s": s.get("totalTimeSec"),
         "t": time.time(),
